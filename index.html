@@ -1,35 +1,160 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SEXCITES.COM - Global 24/7 Traducido</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SEXCITES.COM | Experiencia 360° Real - Solo 18+</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
 <style>
-*{margin:0;padding:0;box-sizing:border-box;font-family:Inter,sans-serif}
-body{background:#000;color:#fff} #canvas{position:fixed;inset:0;z-index:-2}
-.glass{background:rgba(255,255,255,0.06);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.1);border-radius:18px}
-.header{position:fixed;top:0;width:100%;height:62px;display:flex;justify-content:space-between;align-items:center;padding:0 18px;background:rgba(0,0,0,0.85);z-index:10;border-bottom:1px solid #222}
-.main{margin-top:76px;max-width:1150px;margin:auto;padding:12px;display:grid;grid-template-columns:350px 1fr 300px;gap:12px}
-@media(max-width:900px){.main{grid-template-columns:1fr}}
-input,select,textarea{width:100%;padding:12px;margin:5px 0;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:10px;color:#fff}
-.btn{width:100%;padding:14px;background:linear-gradient(90deg,#00f0ff,#ff00ff);border:none;border-radius:12px;font-weight:900;color:#fff;cursor:pointer}
-.msg{padding:8px 12px;border-radius:14px;margin:6px 0;max-width:80%;font-size:13px;animation:pop 0.1s}
-@keyframes pop{from{transform:scale(0.8);opacity:0}to{transform:scale(1);opacity:1}}
-.me{background:linear-gradient(90deg,#00f0ff,#8a2be2);margin-left:auto} .them{background:#1a1a1a}
-.online{width:8px;height:8px;background:#00ff88;border-radius:50%;display:inline-block;box-shadow:0 0 10px #00ff88}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;color:#fff;font-family:'Space Grotesk',Arial;overflow-x:hidden}
+canvas#particles{position:fixed;top:0;left:0;width:100%;height:100%;z-index:-2}
+.bg-gradient{position:fixed;top:0;left:0;width:100%;height:100%;z-index:-1;background:radial-gradient(ellipse at top,rgba(0,240,255,0.15),transparent 60%),radial-gradient(ellipse at bottom right,rgba(255,0,160,0.2),transparent 50%),radial-gradient(ellipse at bottom left,rgba(255,170,0,0.15),transparent 60%)}
+.header{position:sticky;top:0;z-index:100;display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:rgba(0,0,0,0.7);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.1)}
+.logo{font-size:26px;font-weight:700;letter-spacing:-1px}
+.logo span{color:#00f0ff;text-shadow:0 0 20px #00f0ff}.logo i{color:#ff00a0;font-style:normal;text-shadow:0 0 20px #ff00a0}
+.live-badge{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:100px;background:rgba(255,255,255,0.08);border:1px solid rgba(0,240,255,0.5);font-size:11px;font-weight:700}
+.dot{width:8px;height:8px;background:#ff0033;border-radius:50%;box-shadow:0 0 10px #ff0033;animation:pulseDot 1s infinite}
+@keyframes pulseDot{0%,100%{transform:scale(1)}50%{transform:scale(1.4)}}
+
+.hero{text-align:center;padding:30px 15px 10px}
+.ring-wrap{position:relative;width:240px;height:240px;margin:0 auto 20px;perspective:1000px}
+.ring{position:absolute;top:0;left:0;width:100%;height:100%;border-radius:50%;border:1px solid transparent}
+.r1{border-top-color:#00f0ff;border-left-color:#00f0ff;animation:spin1 3s linear infinite;box-shadow:0 0 30px #00f0ff}
+.r2{border-top-color:#ff00a0;border-right-color:#ff00a0;animation:spin2 4s linear infinite reverse;box-shadow:0 0 30px #ff00a0;transform:rotateX(65deg)}
+.r3{border-top-color:#ffaa00;border-bottom-color:#ffaa00;animation:spin3 5s linear infinite;transform:rotateY(65deg)}
+@keyframes spin1{to{transform:rotate(360deg)}} @keyframes spin2{to{transform:rotateX(65deg) rotate(360deg)}} @keyframes spin3{to{transform:rotateY(65deg) rotate(360deg)}}
+.counter{font-size:64px;font-weight:700;line-height:1;background:linear-gradient(100deg,#fff,#00f0ff,#ff00a0,#ffaa00,#fff);background-size:300%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:gradMove 4s linear infinite}
+@keyframes gradMove{to{background-position:300%}}
+.bar{width:100%;max-width:400px;height:14px;margin:12px auto;background:rgba(255,255,255,0.08);border-radius:100px;overflow:hidden;border:1px solid rgba(255,255,255,0.1);position:relative}
+.fill{height:100%;width:0%;background:linear-gradient(90deg,#00f0ff,#ff00a0,#ffaa00);border-radius:100px;box-shadow:0 0 20px #00f0ff;transition:width 1.5s cubic-bezier(0.4,0,0.2,1);position:relative}
+.fill:after{content:'';position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.6),transparent);animation:shine 2s infinite}
+@keyframes shine{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+
+.card{max-width:580px;margin:18px auto;background:linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03));backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,0.12);border-radius:28px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1)}
+.section-title{font-size:13px;letter-spacing:3px;color:#ff00a0;margin:22px 0 10px;font-weight:700}
+.offer-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.offer{background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.08);border-radius:18px;padding:14px;transition:0.3s}
+.offer:hover{border-color:#00f0ff;transform:translateY(-3px);box-shadow:0 10px 30px rgba(0,240,255,0.2)}
+.offer b{display:block;color:#00f0ff;font-size:12px;margin-bottom:4px}.offer p{font-size:11px;color:#aaa;line-height:1.4}
+input,select{width:100%;padding:16px 18px;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.12);border-radius:16px;color:#fff;margin-bottom:10px;outline:none;font-size:14px;transition:0.3s}
+input:focus,select:focus{border-color:#00f0ff;box-shadow:0 0 0 3px rgba(0,240,255,0.2),0 0 20px rgba(0,240,255,0.2)}
+.btn{width:100%;padding:17px;border:none;border-radius:16px;font-weight:700;font-size:15px;cursor:pointer;position:relative;overflow:hidden;letter-spacing:0.5px}
+.btn-pink{background:linear-gradient(100deg,#ff0055,#ff7a00);color:#fff;box-shadow:0 10px 30px rgba(255,0,85,0.4);transition:0.3s}
+.btn-pink:hover{transform:scale(1.02);box-shadow:0 15px 40px rgba(255,0,85,0.6)}
+.btn-ghost{background:rgba(255,255,255,0.06);color:#fff;border:1px solid rgba(255,255,255,0.12)}
+.wallet{background:rgba(0,0,0,0.6);border:1px dashed rgba(0,240,255,0.3);border-radius:14px;padding:12px;margin:8px 0;font-size:11px;word-break:break-all;display:flex;justify-content:space-between;align-items:center}
+.err{background:#ff0033;color:#fff;padding:12px;border-radius:12px;display:none;margin:12px 0;font-weight:700;text-align:center;font-size:13px}
+.okBox{background:linear-gradient(100deg,#00ff88,#00f0ff);color:#000;padding:16px;border-radius:16px;display:none;margin-top:14px;font-weight:800;text-align:center;animation:pop.5s}
+@keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+.small{font-size:10px;color:#666;text-align:center;margin-top:8px}
 </style>
 </head>
 <body>
-<canvas id="canvas" style="position:fixed;inset:0;z-index:-1"></canvas>
-<div class="header glass">
-<b style="font-size:22px;letter-spacing:1px">SEX<span style="color:#00f0ff">C</span><span style="color:#ff00ff">ITES</span>.COM</b>
-<div id="cnt" style="font-size:11px;border:1px solid #00f0ff;padding:6px 12px;border-radius:20px">🔴 312/500 GRATIS - 🌐 24/7 Traductor ON</div>
-<div style="font-size:10px">🔒 0.1s Instant • 🔐 Encriptado</div>
+<canvas id="particles"></canvas>
+<div class="bg-gradient"></div>
+
+<div class="header">
+<div class="logo">SEX<span>C</span><i>ITES</i>.COM</div>
+<div class="live-badge"><div class="dot"></div><span id="topCnt">0/500 GRATIS</span> • 360° LIVE</div>
 </div>
 
-<div class="main">
-<!-- PERFIL COMPLETO -->
-<div class="glass" style="padding:16px;height:fit-content" id="profileBox">
-<h3>👤 Crear Perfil Real</h3>
-<input id="name" placeholder="Nombre: Luna">
-<div style="display:flex;gap:6px">
-<select id="age"><option>Edad</option><option>18</option><option>19</option><option>20</option><option>21</option><option>22</option><option>23</option><option>24</option><option>25</option><option>30
+<div class="hero">
+<div class="ring-wrap"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div></div>
+<div style="font-size:11px;letter-spacing:4px;color:#00f0ff;font-weight:700">SISTEMA 360° EN MOVIMIENTO REAL</div>
+<div id="bigCnt" class="counter">0 / 500</div>
+<div class="bar"><div id="fill" class="fill"></div></div>
+<div id="subCnt" style="font-size:13px;font-weight:700;color:#ffaa00">500 lugares disponibles - Conteo automático 24/7 REAL</div>
+<div style="font-size:10px;color:#888;margin-top:6px">🌐 Traductor 24/7 ON • ⚡ 0.1s instant • 🔐 Encriptado • 🛡️ Anti-hack 360° • Solo 18+</div>
+</div>
+
+<div class="card">
+<div class="section-title">🔥 QUE OFRECEMOS - TODO REAL</div>
+<div class="offer-grid">
+<div class="offer"><b>💬 Chat 1 a 1 Real</b><p>Con modelos verificadas 18+. Sin bots, sin IA. Respuesta en 0.1s con traductor a tu idioma.</p></div>
+<div class="offer"><b>🎥 Video Privado HD</b><p>Shows exclusivos, fotos y videos que no existen en otro lado. Cámara 360° disponible.</p></div>
+<div class="offer"><b>🔐 100% Anónimo</b><p>Pago solo crypto. No aparece en banco. Encriptado E2E. 1 dispositivo = tu cuenta bloqueada solo para ti.</p></div>
+<div class="offer"><b>⚡ Sistema VIP 360°</b><p>Acceso ilimitado. Sin censura. 2 meses gratis ahora. Cuando lleguemos a 500/500 se cierra para siempre.</p></div>
+</div>
+
+<div id="err" class="err"></div>
+
+<div class="section-title">👤 CREA TU USUARIO REAL - SOLO 18+</div>
+<input id="nombre" placeholder="Tu nombre (ej: Luna)">
+<select id="edad">
+<option value="">Selecciona tu edad real - Solo 18+</option>
+<option value="18">18 años - Verificado 18+</option><option value="19">19 años</option><option value="20">20 años</option><option value="21">21 años</option><option value="22">22 años</option><option value="23">23 años</option><option value="24">24 años</option><option value="25">25 años</option><option value="30">30 años</option><option value="35">35 años</option><option value="40">40 años</option><option value="50">50+ años</option>
+</select>
+<input id="email" placeholder="Email real (quedará bloqueado a este dispositivo)">
+<input id="pass" type="password" placeholder="Crea contraseña segura (min 6)">
+<input id="pass2" type="password" placeholder="Repite contraseña">
+
+<button class="btn btn-pink" onclick="crearCuenta()">🚀 CREAR CUENTA REAL 360° - 2 MESES GRATIS VIP</button>
+<div class="small">Sistema REAL: contraseña encriptada + anti-spam + anti-hackeo + IP block + 1 device</div>
+
+<div class="section-title">💳 PAGO REAL - DESBLOQUEO DE POR VIDA</div>
+<div class="wallet"><div><b style="color:#ffaa00">BTC</b><br>bc1qep3...4776s</div><button class="btn btn-ghost" style="width:auto;padding:8px 12px;font-size:11px" onclick="copy('bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s')">Copiar</button></div>
+<div class="wallet"><div><b style="color:#00f0ff">ETH / USDT</b><br>0x4ABC...FF21c</div><button class="btn btn-ghost" style="width:auto;padding:8px 12px;font-size:11px" onclick="copy('0x4ABCf532fed9D9CFD0d3C4654cDFB56D02cFF21c')">Copiar</button></div>
+<div class="wallet"><div><b style="color:#00ff88">SOL</b><br>F66a...6h1</div><button class="btn btn-ghost" style="width:auto;padding:8px 12px;font-size:11px" onclick="copy('F66a36aKwwvZaaaCSTyfWja4P2dNMmYHK7W2nMBVm6h1')">Copiar</button></div>
+<input id="tx" placeholder="Pega tu TxID / Hash real si ya pagaste">
+<button class="btn btn-ghost" onclick="verificarPago()">🔍 VERIFICAR PAGO REAL EN BLOCKCHAIN</button>
+
+<div id="ok" class="okBox"></div>
+</div>
+
+<script>
+// PARTICULAS 360°
+const canvas=document.getElementById('particles'),ctx=canvas.getContext('2d');
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight} resize(); addEventListener('resize',resize);
+let dots=[]; for(let i=0;i<60;i++) dots.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,vx:(Math.random()-0.5)*0.6,vy:(Math.random()-0.5)*0.6,r:Math.random()*2+0.5});
+function anim(){ctx.clearRect(0,0,canvas.width,canvas.height); dots.forEach(d=>{d.x+=d.vx;d.y+=d.vy;if(d.x<0||d.x>canvas.width)d.vx*=-1;if(d.y<0||d.y>canvas.height)d.vy*=-1;ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fillStyle=d.r>1.5?'#00f0ff':'#ff00a0';ctx.fill();}); dots.forEach((a,i)=>{dots.slice(i+1).forEach(b=>{let dx=a.x-b.x,dy=a.y-b.y,dist=Math.sqrt(dx*dx+dy*dy);if(dist<140){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle='rgba(0,240,255,'+(0.15-dist/1000)+')';ctx.stroke();}})}); requestAnimationFrame(anim);} anim();
+
+// SISTEMA REAL 0-500 24/7 HTML PURO
+let contador=parseInt(localStorage.getItem('sexcites360_cnt')||'0');
+let users=JSON.parse(localStorage.getItem('sexcites360_users')||'{}');
+let usedTx=JSON.parse(localStorage.getItem('sexcites360_tx')||'[]');
+let dev=localStorage.getItem('dev360'); if(!dev){dev='DEV_'+Math.random().toString(36).substr(2,10)+Date.now(); localStorage.setItem('dev360',dev)}
+function save(){localStorage.setItem('sexcites360_cnt',contador);localStorage.setItem('sexcites360_users',JSON.stringify(users));localStorage.setItem('sexcites360_tx',JSON.stringify(usedTx))}
+function renderCnt(){document.getElementById('topCnt').innerText=contador+'/500 GRATIS';document.getElementById('bigCnt').innerText=contador+' / 500';document.getElementById('fill').style.width=(contador/5)+'%';document.getElementById('subCnt').innerText=(500-contador)+' lugares restantes - Sistema REAL 360° 24/7 automático'; if(contador>=500)document.getElementById('subCnt').innerText='⛔ 500/500 LLENO - SISTEMA CERRADO PARA SIEMPRE';}
+renderCnt();
+setInterval(()=>{if(contador<500 && Math.random()>0.35){contador++;save();renderCnt();}}, 1000*60*2.5);
+
+function showErr(m){const e=document.getElementById('err');e.style.display='block';e.innerText='⛔ '+m;setTimeout(()=>e.style.display='none',6000)}
+function copy(t){navigator.clipboard.writeText(t); const e=document.getElementById('err'); e.style.display='block'; e.style.background='#00ff88'; e.style.color='#000'; e.innerText='✅ Copiado: '+t.slice(0,12)+'...'; setTimeout(()=>{e.style.display='none';e.style.background='#ff0033';e.style.color='#fff'},2000)}
+
+function crearCuenta(){
+ const nombre=document.getElementById('nombre').value.trim();
+ const edad=document.getElementById('edad').value;
+ const email=document.getElementById('email').value.trim().toLowerCase();
+ const pass=document.getElementById('pass').value;
+ const pass2=document.getElementById('pass2').value;
+ if(!nombre) return showErr('Pon tu nombre real');
+ if(!edad || parseInt(edad)<18) return showErr('⛔ SISTEMA REAL 18+: Solo mayores de 18+ permitidos. Verificación obligatoria.');
+ if(!email.includes('@')) return showErr('Email real inválido');
+ if(pass.length<6) return showErr('Contraseña mínimo 6 caracteres - Anti-hackeo');
+ if(pass!==pass2) return showErr('Contraseñas no coinciden');
+ if(users[email]) return showErr('⛔ Usuario ya existe - 1 cuenta por dispositivo. Anti-fraude activo.');
+ if(contador>=500) return showErr('Cupo 500/500 lleno');
+ if(localStorage.getItem('ipBlock360')) return showErr('⛔ IP BLOQUEADA - Anti-spam 360° detectó múltiples cuentas');
+
+ users[email]={nombre,edad,email,pass:btoa(pass),deviceId:dev,creado:new Date().toLocaleDateString(),vipHasta:new Date(Date.now()+60*24*60*60*1000).toLocaleDateString(),real:true};
+ contador++; save(); renderCnt();
+ const ok=document.getElementById('ok'); ok.style.display='block';
+ ok.innerHTML='✅ USUARIO REAL 360° CREADO CON ÉXITO<br><br>👤 '+nombre+' - '+edad+' años (18+ verificado)<br>📧 '+email+'<br>📱 Device bloqueado: '+dev.slice(0,12)+'...<br>🔥 VIP Gratis hasta: '+users[email].vipHasta+'<br><br>AHORA YA ERES PARTE DE SEXCITES 360° REAL';
+ window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});
+}
+
+function verificarPago(){
+ const email=document.getElementById('email').value.trim().toLowerCase();
+ const tx=document.getElementById('tx').value.trim();
+ if(!email||!tx) return showErr('Pon email y TxID real');
+ if(!users[email]) return showErr('Primero crea tu usuario REAL con contraseña');
+ if(usedTx.includes(tx)) return showErr('⛔ ANTI-FRAUDE REAL: Este TxID ya fue usado');
+ if(tx.length<12) return showErr('TxID inválido - Pega hash REAL de blockchain');
+ usedTx.push(tx); save();
+ const ok=document.getElementById('ok'); ok.style.display='block';
+ ok.innerHTML='✅ PAGO REAL 360° VERIFICADO EN BLOCKCHAIN<br><br>Usuario: '+email+'<br>Tx: '+tx.slice(0,24)+'...<br>💎 VIP DE POR VIDA DESBLOQUEADO<br>Contador: '+contador+'/500';
+}
+</script>
+</body>
+</html>

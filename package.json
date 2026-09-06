@@ -1,5 +1,5 @@
 {
-  "name": "sexcites.com",
+  "name": "sexcites-english-base-247-translator-max-quality",
   "version": "3.0.0",
   "main": "server.js",
   "scripts": { "start": "node server.js" },

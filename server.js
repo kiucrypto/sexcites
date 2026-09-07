@@ -8,8 +8,8 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 const DB_FILE = path.join(__dirname, 'database.json');
 
@@ -51,7 +51,7 @@ function getClientIP(req) {
 // API DE AUTENTICACIÓN Y SUSCRIPCIÓN
 // ==========================================
 app.post('/api/register', (req, res) => {
-  const { username, password, plan } = req.body;
+  const { username, password, plan, avatar, bio } = req.body;
   const clientIP = getClientIP(req);
 
   if (!username || username.trim().length < 3 || !password || password.trim().length < 4) {
@@ -67,7 +67,6 @@ app.post('/api/register', (req, res) => {
   let subscriptionStatus = '';
   let expiresAt = 0;
 
-  // Lógica de lanzamiento: Primeras 500 cuentas gratis por 2 meses con control estricto por IP
   if (totalUsers < 500) {
     if (db.ips[clientIP]) {
       return res.json({ success: false, error: 'Bloqueo de seguridad: Ya se registró una cuenta gratuita desde esta red/IP.' });
@@ -76,7 +75,6 @@ app.post('/api/register', (req, res) => {
     expiresAt = Date.now() + (60 * 24 * 60 * 60 * 1000); // 2 meses
     db.ips[clientIP] = cleanUser;
   } else {
-    // Si se pasa de 500, el plan de pago es obligatorio
     if (plan !== '6m' && plan !== '12m') {
       return res.json({ success: false, error: 'Se alcanzó el límite de 500 cuentas gratis. Debes seleccionar un plan de pago.' });
     }
@@ -89,6 +87,8 @@ app.post('/api/register', (req, res) => {
     id: 'usr_' + Date.now(),
     username: cleanUser,
     password,
+    avatar: avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+    bio: bio ? bio.trim() : '¡Hola! Me acabo de unir a SEXCITES.COM.',
     ip: clientIP,
     subNumber: totalUsers + 1,
     subscriptionStatus,
@@ -117,7 +117,8 @@ app.post('/api/login', (req, res) => {
 });
 
 app.get('/api/init-data', (req, res) => {
-  const currentUsername = req.query.username || '';
+  const currentUsername = (req.query.username || '').toLowerCase();
+  
   const formattedPosts = db.posts.map(p => ({
     ...p,
     likesCount: (p.likes || []).length,
@@ -126,22 +127,52 @@ app.get('/api/init-data', (req, res) => {
 
   const discoveryUsers = Object.keys(db.users)
     .filter(u => u !== currentUsername)
-    .map(u => ({ username: u }));
+    .map(u => ({
+      username: db.users[u].username,
+      avatar: db.users[u].avatar,
+      bio: db.users[u].bio
+    }));
+
+  let activeChats = [];
+  if (currentUsername && db.users[currentUsername]) {
+    Object.keys(db.chats).forEach(chatId => {
+      if (chatId.includes(currentUsername)) {
+        const parts = chatId.split('_');
+        const peer = parts[0] === currentUsername ? parts[1] : parts[0];
+        const messages = db.chats[chatId];
+        const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+        if (peer && db.users[peer]) {
+          activeChats.push({
+            peer,
+            avatar: db.users[peer].avatar,
+            lastMessage: lastMsg ? lastMsg.text : 'Inicia una conversación',
+            timestamp: lastMsg ? lastMsg.timestamp : 0
+          });
+        }
+      }
+    });
+    activeChats.sort((a, b) => b.timestamp - a.timestamp);
+  }
 
   res.json({
     success: true,
     totalUsers: Object.keys(db.users).length,
     posts: formattedPosts,
-    discovery: discoveryUsers
+    discovery: discoveryUsers,
+    chats: activeChats
   });
 });
 
 // ==========================================
-// WEBSOCKETS (TIEMPO REAL)
+// WEBSOCKETS (TIEMPO REAL OPTIMIZADO)
 // ==========================================
 io.on('connection', (socket) => {
   socket.on('join', (username) => {
-    if (username) socket.join(username.toLowerCase());
+    if (username) {
+      const clean = username.toLowerCase();
+      socket.join(clean);
+      socket.username = clean;
+    }
   });
 
   socket.on('post:create', (data) => {
@@ -211,13 +242,13 @@ io.on('connection', (socket) => {
     const cleanPeer = (user2 || '').trim().toLowerCase().replace('@', '');
     
     if (!db.users[cleanPeer]) {
-      socket.emit('error-msg', { message: 'El usuario con el que intentas chatear no existe.' });
+      socket.emit('error-msg', { message: 'El usuario no existe.' });
       return;
     }
 
     const chatId = getChatId(user1, cleanPeer);
     const history = db.chats[chatId] || [];
-    socket.emit('chat:history-loaded', { history, peer: cleanPeer });
+    socket.emit('chat:history-loaded', { history, peer: cleanPeer, peerData: { avatar: db.users[cleanPeer].avatar } });
   });
 
   socket.on('chat:message', (data) => {
@@ -232,7 +263,7 @@ io.on('connection', (socket) => {
     const chatId = getChatId(sender, cleanRecipient);
     if (!db.chats[chatId]) db.chats[chatId] = [];
 
-    const msgObj = { sender, text: text.trim(), timestamp: Date.now() };
+    const msgObj = { sender, recipient: cleanRecipient, text: text.trim(), timestamp: Date.now() };
     db.chats[chatId].push(msgObj);
     saveDB();
 
@@ -242,7 +273,7 @@ io.on('connection', (socket) => {
 });
 
 // ==========================================
-// INTERFAZ FRONT-END (SEXCITES.COM)
+// INTERFAZ FRONT-END MODERNA CON CORAZONES DE NEÓN
 // ==========================================
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -251,7 +282,7 @@ app.get('*', (req, res) => {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SEXCITES.COM — Cloud OS</title>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="/socket.io/socket.io.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -263,42 +294,39 @@ body {
   flex-direction: column; 
   align-items: center; 
   justify-content: flex-start; 
-  padding: 15px; 
+  padding: 20px 10px; 
   position: relative; 
   overflow-x: hidden;
 }
 
 canvas#bgCanvas {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
   z-index: -1;
   pointer-events: none;
-  background: #030107;
+  background: radial-gradient(circle at center, #11051c 0%, #030107 100%);
 }
 
 .container { 
   width: 100%; 
-  max-width: 680px; 
-  background: rgba(15, 8, 25, 0.94); 
-  border: 1px solid rgba(255, 42, 109, 0.35); 
-  border-radius: 20px; 
-  padding: 20px; 
-  box-shadow: 0 25px 60px rgba(0,0,0,0.95); 
-  margin-top: 10px; 
+  max-width: 760px; 
+  background: rgba(12, 6, 20, 0.88); 
+  border: 1px solid rgba(255, 42, 109, 0.4); 
+  border-radius: 24px; 
+  padding: 24px; 
+  box-shadow: 0 30px 80px rgba(0,0,0,0.95), 0 0 25px rgba(255, 42, 109, 0.15); 
   z-index: 1;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
 }
 
 h1 { 
-  font-size: 24px; 
+  font-size: 28px; 
   background: linear-gradient(90deg, #ff2a6d, #05d9e8); 
   -webkit-background-clip: text; 
   -webkit-text-fill-color: transparent; 
   text-align: center; 
-  margin-bottom: 4px; 
+  margin-bottom: 6px; 
   font-weight: 800;
   letter-spacing: 0.5px;
 }
@@ -306,68 +334,91 @@ h1 {
 .counter-banner { 
   background: rgba(5, 217, 232, 0.08); 
   border: 1px solid rgba(5, 217, 232, 0.25); 
-  border-radius: 10px; 
-  padding: 10px; 
+  border-radius: 12px; 
+  padding: 12px; 
   text-align: center; 
-  font-size: 12px; 
-  margin-bottom: 12px; 
+  font-size: 13px; 
+  margin-bottom: 16px; 
   color: #05d9e8; 
   font-weight: 600; 
 }
 
 input, textarea { 
   width: 100%; 
-  padding: 10px; 
-  margin-bottom: 8px; 
+  padding: 12px 14px; 
+  margin-bottom: 12px; 
   background: rgba(255,255,255,0.04); 
   border: 1px solid rgba(255,255,255,0.1); 
-  border-radius: 8px; 
+  border-radius: 10px; 
   color: #fff; 
-  font-size: 12px; 
+  font-size: 13px; 
   outline: none; 
+  transition: border-color 0.2s;
 }
-input:focus, textarea:focus { border-color: #ff2a6d; }
+input:focus, textarea:focus { border-color: #ff2a6d; background: rgba(255,255,255,0.06); }
 
 button { 
   width: 100%; 
-  padding: 10px; 
+  padding: 12px; 
   background: linear-gradient(135deg, #ff2a6d, #7928ca); 
   border: none; 
-  border-radius: 8px; 
+  border-radius: 10px; 
   color: #fff; 
   font-weight: 700; 
   cursor: pointer; 
-  font-size: 12px; 
-  transition: opacity 0.2s;
+  font-size: 14px; 
+  transition: opacity 0.2s, transform 0.1s;
 }
 button:active { transform: scale(0.98); }
 button:hover { opacity: 0.9; }
 
-.plans-box { display: none; margin-top: 8px; margin-bottom: 8px; padding: 10px; background: rgba(255,42,109,0.08); border-radius: 8px; border: 1px solid #ff2a6d; }
-.plan-opt { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 6px; cursor: pointer; color: #fff; }
+.plans-box { display: none; margin-top: 10px; margin-bottom: 12px; padding: 14px; background: rgba(255,42,109,0.08); border-radius: 12px; border: 1px solid #ff2a6d; }
+.plan-opt { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 8px; cursor: pointer; color: #fff; }
 .hidden { display: none !important; }
 
+/* OS DOCK Y NAVEGACIÓN */
 .os-dock { 
   display: flex; 
   justify-content: space-between; 
   align-items: center;
-  background: rgba(255,255,255,0.03); 
-  padding: 8px 12px; 
-  border-radius: 10px; 
-  margin-bottom: 12px; 
-  font-size: 11px; 
+  background: rgba(255,255,255,0.04); 
+  padding: 10px 16px; 
+  border-radius: 14px; 
+  margin-bottom: 16px; 
+  font-size: 13px; 
   font-weight: 600; 
-  border: 1px solid rgba(255,255,255,0.06); 
+  border: 1px solid rgba(255,255,255,0.08); 
 }
-.os-nav-items { display: flex; gap: 4px; }
-.os-dock span { cursor: pointer; padding: 6px 10px; border-radius: 6px; transition: 0.2s; color: #cbd5e1; }
-.os-dock span:hover { background: rgba(255,42,109,0.2); color: #05d9e8; }
-.logout-btn { background: rgba(255, 42, 109, 0.2); color: #ff2a6d; border: 1px solid rgba(255, 42, 109, 0.4); padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 10px; font-weight: 700; width: auto !important; }
-.logout-btn:hover { background: rgba(255, 42, 109, 0.4); color: #fff; }
+.os-nav-items { display: flex; gap: 6px; }
+.os-dock span { cursor: pointer; padding: 8px 12px; border-radius: 8px; transition: 0.2s; color: #cbd5e1; }
+.os-dock span:hover, .os-dock span.active { background: rgba(255,42,109,0.25); color: #05d9e8; }
+.action-btns-header { display: flex; gap: 6px; }
+.refresh-btn { background: rgba(5, 217, 232, 0.2); color: #05d9e8; border: 1px solid rgba(5, 217, 232, 0.4); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700; width: auto !important; }
+.logout-btn { background: rgba(255, 42, 109, 0.2); color: #ff2a6d; border: 1px solid rgba(255, 42, 109, 0.4); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700; width: auto !important; }
 
-.space-section { background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.06); padding: 12px; border-radius: 12px; }
-.post-card { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); padding: 10px; border-radius: 8px; margin-bottom: 8px; }
-.post-img-preview { max-width: 100%; max-height: 220px; border-radius: 6px; margin-top: 6px; object-fit: cover; display: block; }
+.space-section { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 16px; }
+
+/* MURO ESPACIOSO */
+.post-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 16px; border-radius: 14px; margin-bottom: 14px; }
+.post-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.post-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #ff2a6d; }
+.post-img-preview { width: 100%; max-height: 380px; border-radius: 10px; margin-top: 10px; object-fit: cover; display: block; }
+
+/* MATCH & RECOMENDACIONES */
+.match-card-box { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 20px; text-align: center; margin-bottom: 14px; }
+.profile-discovery-img { width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 2px solid #05d9e8; margin: 0 auto 12px auto; display: block; box-shadow: 0 0 20px rgba(5,217,232,0.3); }
+
+/* BUZÓN DE CHAT REAL */
+.chat-layout { display: grid; grid-template-columns: 240px 1fr; gap: 12px; }
+@media (max-width: 600px) { .chat-layout { grid-template-columns: 1fr; } }
+.chats-sidebar { background: rgba(0,0,0,0.4); border-radius: 12px; padding: 10px; max-height: 380px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.06); }
+.chat-contact-item { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; margin-bottom: 4px; background: rgba(255,255,255,0.02); }
+.chat-contact-item:hover { background: rgba(255,42,109,0.15); }
+.chat-window-area { background: rgba(0,0,0,0.5); border-radius: 12px; display: flex; flex-direction: column; height: 380px; border: 1px solid rgba(255,255,255,0.06); padding: 10px; }
+.chat-messages-box { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.msg-bubble { padding: 8px 12px; border-radius: 10px; max-width: 75%; word-break: break-word; line-height: 1.4; }
+.msg-me { background: linear-gradient(135deg, #ff2a6d, #7928ca); align-self: flex-end; color: #fff; }
+.msg-peer { background: rgba(255,255,255,0.08); align-self: flex-start; color: #fff; }
 </style>
 </head>
 <body>
@@ -378,98 +429,120 @@ button:hover { opacity: 0.9; }
   <h1>SEXCITES.COM</h1>
   <div class="counter-banner" id="counterBanner">Verificando estado de red...</div>
 
-  <!-- SECCIÓN DE AUTENTICACIÓN -->
+  <!-- SECCIÓN DE AUTENTICACIÓN Y PERFIL INICIAL -->
   <div id="authSection">
-    <div style="font-size: 12px; font-weight: 700; color: #ff2a6d; margin-bottom: 6px;">🛡️ Registro Seguro (Anti-Multi-Cuentas por IP)</div>
-    <input type="text" id="regUser" placeholder="Usuario (ej. alex)" autocomplete="off">
+    <div style="font-size: 13px; font-weight: 700; color: #ff2a6d; margin-bottom: 10px;">🛡️ Registro de Miembro (Foto y Descripción)</div>
+    <input type="text" id="regUser" placeholder="Nombre de usuario (ej. sophia)" autocomplete="off">
     <input type="password" id="regPass" placeholder="Contraseña segura" autocomplete="off">
     
-    <!-- CONTENEDOR DE PLANES DE PAGO (SE ACTIVA AL PASAR LOS 500 REGISTROS GRATUITOS) -->
+    <div style="margin-bottom: 8px;">
+      <label style="font-size: 11px; color: #05d9e8; font-weight: 600; display: block; margin-bottom: 4px;">Foto de Perfil (URL o Subir imagen):</label>
+      <input type="text" id="regAvatar" placeholder="URL de imagen (ej. https://images.unsplash.com/...)" autocomplete="off">
+    </div>
+
+    <textarea id="regBio" placeholder="Escribe tu biografía o descripción para que aparezcas recomendado..." style="height: 60px; font-size: 12px;"></textarea>
+
+    <!-- CONTENEDOR DE PLANES DE PAGO -->
     <div id="plansContainer" class="plans-box">
-      <div style="font-size: 11px; color: #ff2a6d; font-weight: 700; margin-bottom: 6px;">⚠️ Límite de 500 cuentas gratis alcanzado. Selecciona tu plan de suscripción:</div>
+      <div style="font-size: 12px; color: #ff2a6d; font-weight: 700; margin-bottom: 6px;">⚠️ Límite de 500 cuentas gratis alcanzado. Selecciona tu plan:</div>
       <label class="plan-opt"><input type="radio" name="launchPlan" value="6m" checked> Plan 6 Meses — <b>$15.99 USD</b></label>
       <label class="plan-opt"><input type="radio" name="launchPlan" value="12m"> Plan 12 Meses (Anual) — <b>$28.99 USD</b></label>
     </div>
 
-    <button onclick="registerUser()" style="margin-top: 6px;">Crear Cuenta</button>
-    <div style="text-align: center; font-size: 10px; color: #94a3b8; margin-top: 10px; cursor: pointer;" onclick="toggleAuthMode()">¿Ya tienes cuenta? Inicia Sesión</div>
+    <button onclick="registerUser()" style="margin-top: 6px;">Crear Cuenta en el Cloud OS</button>
+    <div style="text-align: center; font-size: 11px; color: #94a3b8; margin-top: 12px; cursor: pointer;" onclick="toggleAuthMode()">¿Ya tienes cuenta? Inicia Sesión</div>
   </div>
 
   <div id="loginSection" class="hidden">
-    <div style="font-size: 12px; font-weight: 700; color: #05d9e8; margin-bottom: 6px;">🔐 Iniciar Sesión de Miembro</div>
+    <div style="font-size: 13px; font-weight: 700; color: #05d9e8; margin-bottom: 10px;">🔐 Iniciar Sesión de Miembro</div>
     <input type="text" id="logUser" placeholder="Usuario" autocomplete="off">
     <input type="password" id="logPass" placeholder="Contraseña" autocomplete="off">
     <button onclick="loginUser()">Entrar al Cloud OS</button>
-    <div style="text-align: center; font-size: 10px; color: #94a3b8; margin-top: 10px; cursor: pointer;" onclick="toggleAuthMode()">¿No tienes cuenta? Regístrate aquí</div>
+    <div style="text-align: center; font-size: 11px; color: #94a3b8; margin-top: 12px; cursor: pointer;" onclick="toggleAuthMode()">¿No tienes cuenta? Regístrate aquí</div>
   </div>
 
-  <div id="authAlert" style="color: #f87171; font-size: 11px; text-align: center; margin-top: 6px; font-weight: 600;"></div>
+  <div id="authAlert" style="color: #f87171; font-size: 12px; text-align: center; margin-top: 8px; font-weight: 600;"></div>
 
   <!-- PANEL PRINCIPAL DEL OS -->
   <div id="appSection" class="hidden">
     <div class="os-dock">
       <div class="os-nav-items">
-        <span onclick="switchSpace('wall')">🌐 Muro</span>
-        <span onclick="switchSpace('match')">🔥 Match</span>
-        <span onclick="switchSpace('chat')">💬 Chat</span>
+        <span id="navWall" class="active" onclick="switchSpace('wall')">🌐 Muro</span>
+        <span id="navMatch" onclick="switchSpace('match')">🔥 Recomendados</span>
+        <span id="navChat" onclick="switchSpace('chat')">💬 Buzón Chat</span>
       </div>
-      <button class="logout-btn" onclick="logoutUser()">Salir</button>
+      <div class="action-btns-header">
+        <button class="refresh-btn" onclick="refreshData()">🔄 Actualizar</button>
+        <button class="logout-btn" onclick="logoutUser()">Salir</button>
+      </div>
     </div>
 
-    <!-- ESPACIO 1: MURO SOCIAL (ESTILO FACEBOOK CON FOTOS) -->
+    <!-- ESPACIO 1: MURO SOCIAL ESPACIOSO -->
     <div id="spaceWall" class="space-section">
-      <textarea id="postText" placeholder="¿Qué estás pensando?" style="height: 50px; font-size: 11px;"></textarea>
-      
-      <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 8px;">
-        <input type="file" id="postImageFile" accept="image/*" style="display: none;" onchange="handleImagePreview(event)">
-        <button type="button" onclick="document.getElementById('postImageFile').click()" style="width: auto; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); font-size: 10px; padding: 6px 10px;">📷 Añadir Foto</button>
-        <span id="imgFileName" style="font-size: 10px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Sin foto</span>
+      <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); padding: 14px; border-radius: 14px; margin-bottom: 16px;">
+        <textarea id="postText" placeholder="¿Qué está pasando hoy?" style="height: 70px; font-size: 13px; margin-bottom: 8px;"></textarea>
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px;">
+          <input type="file" id="postImageFile" accept="image/*" style="display: none;" onchange="handleImagePreview(event)">
+          <button type="button" onclick="document.getElementById('postImageFile').click()" style="width: auto; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); font-size: 11px; padding: 6px 12px;">📷 Adjuntar Foto</button>
+          <span id="imgFileName" style="font-size: 11px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Sin archivo</span>
+        </div>
+        <div id="imagePreviewContainer" class="hidden" style="position: relative; margin-bottom: 10px;">
+          <img id="imagePreviewElement" style="max-height: 140px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+          <button onclick="clearImageSelection()" style="width: auto; padding: 4px 8px; font-size: 10px; background: #ff2a6d; margin-top: 6px;">Quitar Foto</button>
+        </div>
+        <button onclick="createPost()" style="font-size: 12px; padding: 8px;">Publicar en el Muro</button>
       </div>
-      <div id="imagePreviewContainer" class="hidden" style="position: relative; margin-bottom: 8px;">
-        <img id="imagePreviewElement" style="max-height: 100px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
-        <button onclick="clearImageSelection()" style="width: auto; padding: 2px 6px; font-size: 9px; background: #ff2a6d; margin-top: 4px;">Quitar Foto</button>
-      </div>
-
-      <button onclick="createPost()" style="margin-bottom: 10px; font-size: 11px; padding: 6px;">Publicar Post</button>
-      <div id="wallFeed" style="display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto;"></div>
+      <div id="wallFeed" style="display: flex; flex-direction: column; gap: 12px; max-height: 440px; overflow-y: auto; padding-right: 4px;"></div>
     </div>
 
-    <!-- ESPACIO 2: ZONA DE MATCH (ESTILO TINDER) -->
-    <div id="spaceMatch" class="space-section hidden" style="text-align: center; padding: 20px;">
-      <div style="font-size: 13px; font-weight: 700; color: #ff2a6d; margin-bottom: 10px;">🔥 Descubrimiento y Citas</div>
-      <div id="matchCard" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 25px; margin-bottom: 12px;">
-        <div id="matchUsername" style="font-size: 18px; font-weight: 700; color: #05d9e8; margin-bottom: 10px;">Cargando perfiles...</div>
-        <div style="font-size: 11px; color: #94a3b8;">Usuario real verificado en SEXCITES.COM</div>
-      </div>
-      <div style="display: flex; gap: 10px; justify-content: center;">
-        <button onclick="handleMatchAction('pass')" style="background: rgba(255,255,255,0.1); color: #fff; width: 45%;">✕ Pasar</button>
-        <button onclick="handleMatchAction('like')" style="background: linear-gradient(135deg, #ff2a6d, #05d9e8); width: 45%;">❤️ Me gusta</button>
+    <!-- ESPACIO 2: RECOMENDADOS Y MATCH -->
+    <div id="spaceMatch" class="space-section hidden">
+      <div style="font-size: 15px; font-weight: 700; color: #ff2a6d; margin-bottom: 14px; text-align: center;">🔥 Perfiles Recomendados para ti</div>
+      <div class="match-card-box">
+        <img id="matchAvatar" class="profile-discovery-img" src="" alt="Avatar">
+        <div id="matchUsername" style="font-size: 20px; font-weight: 700; color: #05d9e8; margin-bottom: 6px;">Cargando...</div>
+        <div id="matchBio" style="font-size: 12px; color: #cbd5e1; margin-bottom: 16px; padding: 0 10px; line-height: 1.4;">Cargando descripción...</div>
+        <div style="display: flex; gap: 12px; justify-content: center;">
+          <button onclick="handleMatchAction('pass')" style="background: rgba(255,255,255,0.1); color: #fff; width: 45%; padding: 10px;">✕ Omitir</button>
+          <button onclick="handleMatchAction('like')" style="background: linear-gradient(135deg, #ff2a6d, #05d9e8); width: 45%; padding: 10px;">❤️ Me Gusta</button>
+        </div>
       </div>
     </div>
 
-    <!-- ESPACIO 3: CHAT PRIVADO EN VIVO (ESTILO WHATSAPP) -->
+    <!-- ESPACIO 3: BUZÓN DE MENSAJES Y CHAT EN VIVO -->
     <div id="spaceChat" class="space-section hidden">
-      <div style="display: flex; gap: 4px; margin-bottom: 6px;">
-        <input type="text" id="chatTarget" placeholder="Usuario exacto..." style="margin:0; font-size: 10px;" autocomplete="off">
-        <button onclick="loadChatHistory()" style="width: 90px; margin:0; font-size: 10px; padding: 6px;">Abrir Chat</button>
-      </div>
-      <div id="chatBox" style="background: rgba(0,0,0,0.5); border-radius: 6px; height: 190px; padding: 6px; overflow-y: auto; font-size: 10px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.04);">
-        <div style="color: #64748b; text-align: center; padding-top: 60px;">Selecciona o escribe un usuario para chatear.</div>
-      </div>
-      <div style="display: flex; gap: 4px;">
-        <input type="text" id="msgInput" placeholder="Escribe un mensaje..." style="margin:0; font-size: 10px;" autocomplete="off">
-        <button onclick="sendChatMessage()" style="width: 65px; margin:0; font-size: 10px; padding: 6px;">Enviar</button>
+      <div class="chat-layout">
+        <div class="chats-sidebar">
+          <div style="font-size: 11px; font-weight: 700; color: #ff2a6d; margin-bottom: 8px; text-transform: uppercase;">Buzón de Conversaciones</div>
+          <div id="chatContactsList">
+            <div style="color: #64748b; font-size: 11px; text-align: center; padding-top: 20px;">Sin chats activos</div>
+          </div>
+        </div>
+        <div class="chat-window-area">
+          <div id="chatHeaderInfo" style="font-size: 12px; font-weight: 700; color: #05d9e8; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 6px;">
+            Selecciona un chat o usuario
+          </div>
+          <div id="chatBox" class="chat-messages-box">
+            <div style="color: #64748b; text-align: center; margin: auto;">Tus mensajes aparecerán aquí instantáneamente.</div>
+          </div>
+          <div style="display: flex; gap: 6px; margin-top: 6px;">
+            <input type="text" id="msgInput" placeholder="Escribe un mensaje en vivo..." style="margin:0; font-size: 12px;" autocomplete="off" onkeypress="handleChatKeypress(event)">
+            <button onclick="sendChatMessage()" style="width: 80px; margin:0; font-size: 12px; padding: 8px;">Enviar</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-// Animación de partículas de fondo con neón rojo
+// ==========================================
+// MOTOR DE CORAZONES DE NEÓN EN TIEMPO REAL
+// ==========================================
 const canvas = document.getElementById('bgCanvas');
 const ctx = canvas.getContext('2d');
-let particles = [];
-const particleCount = 40;
+let hearts = [];
+const heartCount = 30;
 
 function resizeCanvas() {
   canvas.width = window.innerWidth;
@@ -478,39 +551,66 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-for (let i = 0; i < particleCount; i++) {
-  particles.push({
+for (let i = 0; i < heartCount; i++) {
+  hearts.push({
     x: Math.random() * canvas.width,
     y: Math.random() * canvas.height,
-    radius: Math.random() * 2 + 1,
-    vx: (Math.random() - 0.5) * 0.4,
-    vy: (Math.random() - 0.5) * 0.4
+    size: Math.random() * 14 + 8,
+    speedY: (Math.random() * 0.8 + 0.3) * -1, // Suben flotando suavemente
+    speedX: (Math.random() - 0.5) * 0.5,
+    opacity: Math.random() * 0.6 + 0.2,
+    color: Math.random() > 0.3 ? '#ff2a6d' : '#05d9e8', // Tonos neón rosa cian
+    pulse: Math.random() * 0.02 + 0.01,
+    pulseVal: Math.random() * Math.PI
   });
+}
+
+function drawNeonHeart(x, y, size, color, opacity) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.translate(x, y);
+  
+  // Efecto resplandor neón real
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = color;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = opacity;
+
+  const d = size;
+  ctx.moveTo(0, d / 4);
+  ctx.bezierCurveTo(d / 2, -d / 2, d, d / 3, 0, d);
+  ctx.bezierCurveTo(-d, d / 3, -d / 2, -d / 2, 0, d / 4);
+  ctx.fill();
+  ctx.restore();
 }
 
 function animateBackground() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'rgba(255, 42, 109, 0.75)';
-  ctx.shadowBlur = 10;
-  ctx.shadowColor = '#ff2a6d';
 
-  particles.forEach(p => {
-    p.x += p.vx;
-    p.y += p.vy;
-    if (p.x < 0) p.x = canvas.width;
-    if (p.x > canvas.width) p.x = 0;
-    if (p.y < 0) p.y = canvas.height;
-    if (p.y > canvas.height) p.y = 0;
+  hearts.forEach(h => {
+    h.y += h.speedY;
+    h.x += h.speedX;
+    h.pulseVal += h.pulse;
+    
+    // Animación de pulso de tamaño
+    let currentSize = h.size + Math.sin(h.pulseVal) * 2;
 
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-    ctx.fill();
+    // Reciclar corazón cuando sale por arriba de la pantalla
+    if (h.y < -30) {
+      h.y = canvas.height + 30;
+      h.x = Math.random() * canvas.width;
+    }
+    if (h.x < -30) h.x = canvas.width + 30;
+    if (h.x > canvas.width + 30) h.x = -30;
+
+    drawNeonHeart(h.x, h.y, currentSize, h.color, h.opacity);
   });
+
   requestAnimationFrame(animateBackground);
 }
 animateBackground();
 
-// Lógica de la aplicación cliente
+// Aplicación y WebSockets
 const socket = io();
 let currentUser = null;
 let currentChatPeer = null;
@@ -548,14 +648,20 @@ function toggleAuthMode() {
 function switchSpace(space) {
   ['Wall', 'Match', 'Chat'].forEach(s => {
     document.getElementById('space' + s).classList.add('hidden');
+    document.getElementById('nav' + s).classList.remove('active');
   });
   document.getElementById('space' + space.charAt(0).toUpperCase() + space.slice(1)).classList.remove('hidden');
+  document.getElementById('nav' + space.charAt(0).toUpperCase() + space.slice(1)).classList.add('active');
+  
   if (space === 'match') loadNextMatchProfile();
+  if (space === 'chat') refreshData();
 }
 
 async function registerUser() {
   const username = document.getElementById('regUser').value;
   const password = document.getElementById('regPass').value;
+  const avatar = document.getElementById('regAvatar').value;
+  const bio = document.getElementById('regBio').value;
   const selectedPlan = document.querySelector('input[name="launchPlan"]:checked');
   const plan = selectedPlan ? selectedPlan.value : null;
 
@@ -563,7 +669,7 @@ async function registerUser() {
     const res = await fetch('/api/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, plan })
+      body: JSON.stringify({ username, password, plan, avatar, bio })
     });
     const data = await res.json();
     if (data.success) { 
@@ -616,15 +722,20 @@ function bootOS(user) {
   document.getElementById('appSection').classList.remove('hidden');
   
   socket.emit('join', user.username);
-  loadInitialData();
+  refreshData();
 }
 
-async function loadInitialData() {
+async function refreshData() {
+  if (!currentUser) return;
   const res = await fetch('/api/init-data?username=' + currentUser.username);
   const data = await res.json();
+  
   renderWallPosts(data.posts);
   discoveryList = (data.discovery || []).filter(u => u.username !== currentUser.username);
-  loadNextMatchProfile();
+  renderActiveChats(data.chats);
+  if (!document.getElementById('spaceMatch').classList.contains('hidden')) {
+    loadNextMatchProfile();
+  }
 }
 
 function handleImagePreview(event) {
@@ -643,7 +754,7 @@ function handleImagePreview(event) {
 function clearImageSelection() {
   base64Image = null;
   document.getElementById('postImageFile').value = '';
-  document.getElementById('imgFileName').innerText = 'Sin foto';
+  document.getElementById('imgFileName').innerText = 'Sin archivo';
   document.getElementById('imagePreviewContainer').classList.add('hidden');
 }
 
@@ -670,24 +781,31 @@ function appendPostToDOM(p, prepend = false) {
   div.id = 'post_' + p.id;
 
   let imageHtml = p.image ? \`<img src="\${p.image}" class="post-img-preview">\` : '';
-  let commentsHtml = \`<div id="comm_list_\${p.id}" style="margin-top:4px; padding-left:6px; border-left:2px solid #ff2a6d; display:flex; flex-direction:column; gap:3px;">\`;
+  let commentsHtml = \`<div id="comm_list_\${p.id}" style="margin-top:10px; padding-left:10px; border-left:2px solid #ff2a6d; display:flex; flex-direction:column; gap:6px;">\`;
   if (p.comments) {
     p.comments.forEach(c => {
-      commentsHtml += \`<div><b style="color:#05d9e8;">@\${c.author}:</b> \${c.text}</div>\`;
+      commentsHtml += \`<div style="font-size:12px;"><b style="color:#05d9e8;">@\${c.author}:</b> \${c.text}</div>\`;
     });
   }
   commentsHtml += '</div>';
 
-  div.innerHTML = \`<b style="color:#ff2a6d; font-size:11px;">@\${p.author}</b>
-                   \${p.text ? \`<p style="color:#e2e8f0; margin-top:2px; font-size:11px;">\${p.text}</p>\` : ''}
+  div.innerHTML = \`<div class="post-header">
+                     <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" class="post-avatar">
+                     <div>
+                       <b style="color:#ff2a6d; font-size:13px;">@\${p.author}</b>
+                       <div style="font-size:10px; color:#94a3b8;">Hace un momento</div>
+                     </div>
+                   </div>
+                   \${p.text ? \`<p style="color:#e2e8f0; margin-top:6px; font-size:13px; line-height:1.4;">\${p.text}</p>\` : ''}
                    \${imageHtml}
-                   <div style="display:flex; gap:10px; margin-top:6px; align-items:center;">
-                     <button onclick="toggleLike('\${p.id}')" style="width:auto; background:none; border:none; color:\${p.userHasLiked ? '#ff2a6d':'#94a3b8'}; cursor:pointer; font-size:10px;">❤️ <span id="likes_\${p.id}">\${p.likesCount}</span></button>
+                   <div style="display:flex; gap:12px; margin-top:10px; align-items:center;">
+                     <button onclick="toggleLike('\${p.id}')" style="width:auto; background:none; border:none; color:\${p.userHasLiked ? '#ff2a6d':'#94a3b8'}; cursor:pointer; font-size:12px; font-weight:700;">❤️ <span id="likes_\${p.id}">\${p.likesCount}</span> Likes</button>
+                     <button onclick="openChatWithUser('\${p.author}')" style="width:auto; background:rgba(5,217,232,0.1); border:1px solid rgba(5,217,232,0.3); color:#05d9e8; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer;">💬 Mensaje Privado</button>
                    </div>
                    \${commentsHtml}
-                   <div style="display:flex; gap:4px; margin-top:4px;">
-                     <input type="text" id="comm_txt_\${p.id}" placeholder="Comentar..." style="margin:0; font-size:9px; padding:4px;" autocomplete="off">
-                     <button onclick="sendComment('\${p.id}')" style="width:55px; margin:0; padding:4px; font-size:9px;">Enviar</button>
+                   <div style="display:flex; gap:6px; margin-top:10px;">
+                     <input type="text" id="comm_txt_\${p.id}" placeholder="Escribe un comentario..." style="margin:0; font-size:11px; padding:8px;" autocomplete="off">
+                     <button onclick="sendComment('\${p.id}')" style="width:75px; margin:0; padding:8px; font-size:11px;">Comentar</button>
                    </div>\`;
 
   if (prepend) feed.appendChild(div);
@@ -714,19 +832,27 @@ function sendComment(postId) {
 socket.on('post:commented', (data) => {
   const list = document.getElementById('comm_list_' + data.postId);
   if (list) {
-    list.innerHTML += \`<div><b style="color:#05d9e8;">@\${data.comment.author}:</b> \${data.comment.text}</div>\`;
+    list.innerHTML += \`<div style="font-size:12px;"><b style="color:#05d9e8;">@\${data.comment.author}:</b> \${data.comment.text}</div>\`;
   }
 });
 
-// Lógica de Match
 function loadNextMatchProfile() {
   const nameEl = document.getElementById('matchUsername');
+  const avatarEl = document.getElementById('matchAvatar');
+  const bioEl = document.getElementById('matchBio');
+
   if (discoveryList.length === 0) {
-    nameEl.innerText = 'No hay más perfiles disponibles.';
+    nameEl.innerText = 'No hay más perfiles';
+    avatarEl.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
+    bioEl.innerText = 'Vuelve más tarde para conocer nuevos usuarios.';
     return;
   }
   if (currentDiscoveryIndex >= discoveryList.length) currentDiscoveryIndex = 0;
-  nameEl.innerText = '@' + discoveryList[currentDiscoveryIndex].username;
+  
+  const profile = discoveryList[currentDiscoveryIndex];
+  nameEl.innerText = '@' + profile.username;
+  avatarEl.src = profile.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
+  bioEl.innerText = profile.bio || 'Sin descripción';
 }
 
 function handleMatchAction(action) {
@@ -738,45 +864,78 @@ function handleMatchAction(action) {
 }
 
 socket.on('match:success', (data) => {
-  alert('🔥 ¡Es un Match! Hiciste conexión con @' + data.peer);
+  alert('🔥 ¡Es un Match! Hiciste conexión mutua con @' + data.peer);
 });
 
-// Lógica de Chat Privado
-function loadChatHistory() {
-  const peer = document.getElementById('chatTarget').value;
-  if (!peer) return alert('Escribe un nombre de usuario.');
-  currentChatPeer = peer.trim().toLowerCase().replace('@', '');
+function openChatWithUser(username) {
+  switchSpace('chat');
+  currentChatPeer = username.trim().toLowerCase().replace('@', '');
+  document.getElementById('chatHeaderInfo').innerHTML = \`Chat en vivo con @\${currentChatPeer}\`;
   socket.emit('chat:load', { user1: currentUser.username, user2: currentChatPeer });
 }
 
+function renderActiveChats(chats) {
+  const container = document.getElementById('chatContactsList');
+  if (!chats || chats.length === 0) {
+    container.innerHTML = \`<div style="color: #64748b; font-size: 11px; text-align: center; padding-top: 20px;">Sin chats activos</div>\`;
+    return;
+  }
+  container.innerHTML = '';
+  chats.forEach(c => {
+    container.innerHTML += \`<div class="chat-contact-item" onclick="openChatWithUser('\${c.peer}')">
+      <img src="\${c.avatar}" style="width:32px; height:32px; border-radius:50%; object-fit:cover;">
+      <div style="overflow:hidden;">
+        <div style="font-size:12px; font-weight:700; color:#05d9e8;">@\${c.peer}</div>
+        <div style="font-size:10px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">\${c.lastMessage}</div>
+      </div>
+    </div>\`;
+  });
+}
+
 socket.on('chat:history-loaded', (data) => {
+  currentChatPeer = data.peer;
+  document.getElementById('chatHeaderInfo').innerHTML = \`💬 Conversación en vivo con @\${data.peer}\`;
   const box = document.getElementById('chatBox');
   box.innerHTML = '';
   if (data.history.length === 0) {
-    box.innerHTML = \`<div style="color:#64748b; text-align:center;">Inicia conversación con @\${data.peer}</div>\`;
+    box.innerHTML = \`<div style="color:#64748b; text-align:center; margin:auto;">Inicia la conversación con @\${data.peer} ahora mismo.</div>\`;
     return;
   }
-  data.history.forEach(m => appendMsgToChat(m));
+  data.history.forEach(m => appendMsgToDOM(m));
   box.scrollTop = box.scrollHeight;
 });
 
 function sendChatMessage() {
-  const text = document.getElementById('msgInput').value;
-  if (!currentChatPeer || !text) return alert('Selecciona un usuario válido y escribe un mensaje.');
+  const input = document.getElementById('msgInput');
+  const text = input.value;
+  if (!currentChatPeer || !text) return alert('Selecciona una conversación y escribe un mensaje.');
   socket.emit('chat:message', { sender: currentUser.username, recipient: currentChatPeer, text });
-  document.getElementById('msgInput').value = '';
+  input.value = '';
+}
+
+function handleChatKeypress(e) {
+  if (e.key === 'Enter') sendChatMessage();
 }
 
 socket.on('chat:incoming', (msg) => {
-  if (currentChatPeer && (msg.sender === currentChatPeer || msg.sender === currentUser.username)) {
-    appendMsgToChat(msg);
+  if (currentChatPeer && (msg.sender === currentChatPeer || msg.recipient === currentChatPeer)) {
+    appendMsgToDOM(msg);
   }
+  refreshData();
 });
 
-function appendMsgToChat(m) {
+function appendMsgToDOM(m) {
   const box = document.getElementById('chatBox');
   const isMe = m.sender === currentUser.username;
-  box.innerHTML += \`<div style="margin-bottom:3px;"><b style="color:\${isMe ? '#05d9e8' : '#ff2a6d'};">@\${m.sender}:</b> \${m.text}</div>\`;
+  
+  if (box.innerHTML.includes('Tus mensajes aparecerán aquí') || box.innerHTML.includes('Inicia la conversación')) {
+    box.innerHTML = '';
+  }
+
+  const div = document.createElement('div');
+  div.className = 'msg-bubble ' + (isMe ? 'msg-me' : 'msg-peer');
+  div.innerHTML = \`<div style="font-size:10px; opacity:0.8; margin-bottom:2px;">@\${m.sender}</div><div>\${m.text}</div>\`;
+  box.appendChild(div);
   box.scrollTop = box.scrollHeight;
 }
 
@@ -788,5 +947,5 @@ socket.on('error-msg', (data) => { alert(data.message); });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM Cloud OS activo en el puerto ' + PORT);
+  console.log('SEXCITES.COM Cloud OS con Corazones de Neón activo en el puerto ' + PORT);
 });

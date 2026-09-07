@@ -34,7 +34,7 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V15 LIVE & FULLY OPERATIONAL');
+  res.status(200).send('SEXCITES.COM V17 LIVE & FULLY OPERATIONAL');
 });
 
 // Strict registration: 1 device = 1 account + 500 Free Limit Blocker (501+ requires payment first)
@@ -176,12 +176,11 @@ app.post('/api/post', (req, res) => {
     text: text ? text.trim() : '',
     image: image || null,
     timestamp: Date.now(),
-    likes: [], // Array of userIds who liked
+    likes: [],
     comments: []
   };
 
   posts.unshift(newPost);
-  // Send sanitized post structure for client rendering
   io.emit('new-post', { ...newPost, likesCount: 0, userHasLiked: false });
   res.json({ success: true, post: newPost });
 });
@@ -326,7 +325,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Front-End Interface with SEXCITES 24/7 Translation & Full Wall Interactivity (Likes, Comments, Share)
+// Front-End Interface with Founder Debut Description, Dynamic Background & Full Wall Interactivity
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -338,8 +337,12 @@ app.get('*', (req, res) => {
 <script src="/socket.io/socket.io.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+
+/* DYNAMIC MOVING BACKGROUND ANIMATION */
 body {
-  background: linear-gradient(135deg, #0b0e24 0%, #070a18 100%);
+  background: linear-gradient(135deg, #070913 0%, #101538 50%, #1f0b24 100%);
+  background-size: 400% 400%;
+  animation: gradientBG 15s ease infinite;
   color: #fff;
   min-height: 100vh;
   display: flex;
@@ -348,7 +351,30 @@ body {
   overflow-x: hidden;
   position: relative;
 }
-.hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: hidden; }
+@keyframes gradientBG {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* FLOATING GLOW ORBS IN BACKGROUND */
+.bg-glow-orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.4;
+  animation: orbFloat 10s ease-in-out infinite alternate;
+}
+.orb1 { width: 300px; height: 300px; background: #ff758c; top: -50px; left: -50px; }
+.orb2 { width: 350px; height: 350px; background: #38bdf8; bottom: -80px; right: -80px; animation-delay: -5s; }
+@keyframes orbFloat {
+  0% { transform: translateY(0px) scale(1); }
+  100% { transform: translateY(30px) scale(1.1); }
+}
+
+.hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; overflow: hidden; }
 .heart { position: absolute; bottom: -50px; font-size: 20px; animation: floatUp 6s linear infinite; filter: drop-shadow(0 0 8px rgba(255,105,180,0.6)); opacity: 0.8; }
 @keyframes floatUp {
   0% { transform: translateY(0) scale(0.8); opacity: 0.8; }
@@ -387,7 +413,6 @@ body {
   text-transform: uppercase;
   white-space: nowrap;
 }
-/* Completely hide Google native elements & maintain clean SEXCITES UI */
 .goog-te-banner-frame { display: none !important; }
 .goog-logo-link { display: none !important; }
 .goog-te-gadget { color: transparent !important; font-size: 0 !important; }
@@ -407,17 +432,46 @@ body { top: 0 !important; }
 .app-container {
   width: 100%;
   max-width: 480px;
-  background: rgba(18, 22, 48, 0.78);
-  backdrop-filter: blur(22px) saturate(150%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 22, 48, 0.85);
+  backdrop-filter: blur(25px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 24px;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+  box-shadow: 0 25px 50px rgba(0,0,0,0.6);
   z-index: 10;
   padding: 24px;
   margin: 15px;
 }
-h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 6px; background: linear-gradient(90deg, #ff758c, #ff7eb3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.subtitle { font-size: 11px; text-align: center; color: #a5b4fc; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px; }
+h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; background: linear-gradient(90deg, #ff758c, #ff7eb3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.subtitle { font-size: 11px; text-align: center; color: #a5b4fc; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* FOUNDER DEBUT INFO BOX */
+.founder-intro-box {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 117, 140, 0.25);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 15px;
+  font-size: 11px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+.founder-intro-box h3 {
+  font-size: 12px;
+  color: #ff758c;
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+.founder-intro-box ul {
+  margin: 6px 0 6px 14px;
+}
+.founder-signature {
+  margin-top: 6px;
+  text-align: right;
+  font-style: italic;
+  color: #38bdf8;
+  font-weight: 600;
+}
+
 input {
   width: 100%;
   padding: 12px 16px;
@@ -452,6 +506,10 @@ button:active { transform: scale(0.98); }
 </head>
 <body>
 
+<!-- BACKGROUND GLOW ORBS -->
+<div class="bg-glow-orb orb1"></div>
+<div class="bg-glow-orb orb2"></div>
+
 <!-- SEXCITES 24/7 CUSTOM TRANSLATE WIDGET -->
 <div class="translate-float">
   <span class="translate-brand">SEXCITES Translate</span>
@@ -473,10 +531,23 @@ button:active { transform: scale(0.98); }
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private Community 18+ • Real-Time V15</div>
+  <div class="subtitle">Private Community 18+ • Real-Time V17</div>
 
   <!-- AUTH VIEW -->
   <div id="authView">
+    
+    <!-- FOUNDER DEBUT & FEATURE DESCRIPTION -->
+    <div class="founder-intro-box" id="founderIntroContainer">
+      <h3>🚀 Gran Debut Oficial (06-09-2026)</h3>
+      <p>Bienvenido al lanzamiento oficial de <b>SEXCITES.com</b>. Una comunidad privada diseñada para conectar sin límites.</p>
+      <ul style="padding-left:12px;">
+        <li><b>Funciones Principales:</b> Chat privado en tiempo real, muro interactivo con fotos, likes instantáneos, sistema de compartir y traducción multilingüe 24/7.</li>
+        <li><b>Próximas Actualizaciones:</b> Videollamadas HD, salas temáticas avanzadas y app móvil dedicada.</li>
+        <li><b>Precios más bajos</b> que en cualquier otro lugar del mercado, con accesos justos y transparentes en BTC y ETH.</li>
+      </ul>
+      <div class="founder-signature">Con toda la humildad hacia el futuro,<br><b>Jhon Gonzales (Fundador)</b></div>
+    </div>
+
     <div style="display:flex; gap:10px; margin-bottom:15px;">
       <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.1)">Register</button>
       <button onclick="switchTab('log')" id="btnLogTab">Sign In</button>
@@ -884,7 +955,6 @@ function sharePost(postId) {
   }
 }
 
-// Temporary store for reply images keyed by post ID
 const replyImages = {};
 function handleReplyImage(event, postId) {
   const file = event.target.files[0];
@@ -957,5 +1027,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V15 running on port ' + PORT);
+  console.log('SEXCITES.COM V17 running on port ' + PORT);
 });

@@ -28,7 +28,7 @@ if (fs.existsSync(DB_FILE)) {
     const data = fs.readFileSync(DB_FILE, 'utf8');
     db = JSON.parse(data);
   } catch(e) {
-    console.log('Iniciando nueva base de datos.');
+    console.log('Iniciando nueva base de datos para SEXCITES.COM.');
   }
 }
 
@@ -43,17 +43,17 @@ function getChatId(u1, u2) {
 }
 
 // ==========================================
-// API REST (REGISTRO Y LOGIN REAL)
+// API REST (AUTENTICACIÓN Y DATOS)
 // ==========================================
 app.post('/api/register', (req, res) => {
   const { username, password } = req.body;
   if (!username || username.trim().length < 3 || !password || password.trim().length < 4) {
-    return res.json({ success: false, error: 'El usuario (min 3 chars) y contraseña (min 4 chars) son obligatorios.' });
+    return res.json({ success: false, error: 'Usuario (mín. 3 chars) y contraseña (mín. 4 chars) obligatorios.' });
   }
 
   const cleanUser = username.trim().toLowerCase().replace('@', '');
   if (db.users[cleanUser]) {
-    return res.json({ success: false, error: 'Este nombre de usuario ya está en uso.' });
+    return res.json({ success: false, error: 'Este nombre de usuario ya está registrado.' });
   }
 
   const newUser = {
@@ -76,7 +76,7 @@ app.post('/api/login', (req, res) => {
 
   const user = db.users[cleanUser];
   if (!user || user.password !== password) {
-    return res.json({ success: false, error: 'Usuario o contraseña incorrectos.' });
+    return res.json({ success: false, error: 'Credenciales inválidas. Verifica tus datos.' });
   }
 
   res.json({ success: true, user });
@@ -105,7 +105,7 @@ io.on('connection', (socket) => {
     const cleanTarget = (target || '').trim().toLowerCase().replace('@', '');
 
     if (!db.users[cleanTarget] || cleanTarget === sender) {
-      socket.emit('error-msg', { message: 'El usuario no existe o acción inválida.' });
+      socket.emit('error-msg', { message: 'El usuario no existe o la acción no es válida.' });
       return;
     }
 
@@ -114,7 +114,7 @@ io.on('connection', (socket) => {
     saveDB();
 
     io.to(cleanTarget).emit('friend:request-received', { sender });
-    socket.emit('success-msg', { message: 'Solicitud enviada a @' + cleanTarget });
+    socket.emit('success-msg', { message: 'Solicitud enviada con éxito a @' + cleanTarget });
   });
 
   socket.on('chat:message', (data) => {
@@ -124,7 +124,7 @@ io.on('connection', (socket) => {
     const last = antiSpamChat.get(sender) || 0;
     const now = Date.now();
     if (now - last < 250) {
-      socket.emit('error-msg', { message: 'Por favor, espera un momento.' });
+      socket.emit('error-msg', { message: 'Protección anti-spam: Por favor espera un momento.' });
       return;
     }
     antiSpamChat.set(sender, now);
@@ -204,7 +204,7 @@ io.on('connection', (socket) => {
 });
 
 // ==========================================
-// INTERFAZ FRONT-END (SEXCITES.COM)
+// INTERFAZ DE SISTEMA OPERATIVO WEB (SEXCITES.COM)
 // ==========================================
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -212,94 +212,115 @@ app.get('*', (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SEXCITES.COM — Plataforma Activa 24/7</title>
+<title>SEXCITES.COM — Sistema Operativo en Vivo</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/socket.io/socket.io.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; user-select: none; }
-body, html { width: 100%; height: 100%; overflow: hidden; background: #030006; color: #fff; }
+body, html { width: 100%; height: 100%; overflow: hidden; background: #020005; color: #fff; }
 
+/* FONDO ANIMADO EXCLUSIVO INTERACTIVO */
 .animated-bg {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  background: linear-gradient(135deg, #070112, #1c0733, #030006, #2b0222);
+  background: linear-gradient(125deg, #05020a, #1a062c, #020005, #22011f);
   background-size: 400% 400%;
-  animation: bgMove 14s ease infinite;
+  animation: gradientMotion 16s ease infinite;
   z-index: -2;
 }
-@keyframes bgMove {
+@keyframes gradientMotion {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
 
-.glow-overlay {
+.particles {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  background-image: radial-gradient(rgba(255, 42, 109, 0.12) 1px, transparent 1px), radial-gradient(rgba(5, 217, 232, 0.08) 1px, transparent 1px);
-  background-size: 36px 36px; background-position: 0 0, 18px 18px;
+  background-image: radial-gradient(rgba(255, 42, 109, 0.15) 1px, transparent 1px), radial-gradient(rgba(5, 217, 232, 0.1) 1px, transparent 1px);
+  background-size: 40px 40px; background-position: 0 0, 20px 20px;
   z-index: -1;
+  animation: particleShift 60s linear infinite;
+}
+@keyframes particleShift {
+  from { background-position: 0 0, 20px 20px; }
+  to { background-position: 1000px 1000px, 1020px 1020px; }
 }
 
-#authScreen {
+/* PANTALLA DE ACCESO / BLOQUEO (OS AUTH) */
+#osLockScreen {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   display: flex; justify-content: center; align-items: center;
-  background: rgba(3, 0, 6, 0.9); backdrop-filter: blur(25px);
-  z-index: 9999; transition: opacity 0.4s ease;
+  background: rgba(2, 0, 5, 0.88); backdrop-filter: blur(25px);
+  z-index: 9999; transition: opacity 0.5s ease;
 }
-.auth-box {
-  width: 380px; background: rgba(18, 10, 32, 0.85);
-  border: 1px solid rgba(255, 42, 109, 0.4); border-radius: 22px;
-  padding: 30px; box-shadow: 0 25px 80px rgba(0,0,0,0.9); text-align: center;
+.lock-card {
+  width: 390px; background: rgba(18, 10, 32, 0.8);
+  border: 1px solid rgba(255, 42, 109, 0.35); border-radius: 24px;
+  padding: 32px; box-shadow: 0 30px 90px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.1);
+  text-align: center;
 }
-.auth-box h1 {
+.lock-card h1 {
   font-size: 26px; background: linear-gradient(90deg, #ff2a6d, #05d9e8);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 4px;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 4px; letter-spacing: 1px;
 }
-.auth-box p { font-size: 11px; color: #a5b4fc; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 22px; }
-input, textarea { width: 100%; padding: 13px; margin-bottom: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; color: #fff; font-size: 13px; outline: none; }
-input:focus, textarea:focus { border-color: #ff2a6d; background: rgba(255,255,255,0.08); }
-button.btn-main { width: 100%; padding: 13px; background: linear-gradient(135deg, #ff2a6d, #7928ca); border: none; border-radius: 12px; color: white; font-weight: 700; font-size: 13px; cursor: pointer; }
-button.btn-main:active { transform: scale(0.97); }
-.switch-text { margin-top: 14px; font-size: 12px; color: #cbd5e1; cursor: pointer; }
-.switch-text span { color: #05d9e8; font-weight: 600; text-decoration: underline; }
+.lock-card p { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 24px; }
+input, textarea { width: 100%; padding: 14px; margin-bottom: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; color: #fff; font-size: 13px; outline: none; transition: 0.3s; }
+input:focus, textarea:focus { border-color: #ff2a6d; background: rgba(255,255,255,0.07); box-shadow: 0 0 15px rgba(255,42,109,0.2); }
+button.os-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #ff2a6d, #7928ca); border: none; border-radius: 12px; color: white; font-weight: 700; font-size: 13px; cursor: pointer; transition: 0.2s; box-shadow: 0 10px 25px rgba(255,42,109,0.4); }
+button.os-btn:active { transform: scale(0.97); }
+.auth-switch { margin-top: 15px; font-size: 12px; color: #94a3b8; cursor: pointer; }
+.auth-switch span { color: #05d9e8; font-weight: 600; text-decoration: underline; }
 
-#appWorkspace {
+/* ENTORNO DE ESCRITORIO DEL SISTEMA OPERATIVO */
+#osDesktop {
   width: 100%; height: 100%; display: flex; flex-direction: column;
-  opacity: 0; pointer-events: none; transition: opacity 0.5s ease;
+  position: relative; opacity: 0; pointer-events: none; transition: opacity 0.6s ease;
 }
-#appWorkspace.active { opacity: 1; pointer-events: auto; }
+#osDesktop.active { opacity: 1; pointer-events: auto; }
 
-.top-bar {
-  height: 46px; background: rgba(12, 6, 24, 0.75); backdrop-filter: blur(15px);
-  border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; padding: 0 20px;
+/* BARRA SUPERIOR DEL OS */
+.os-topbar {
+  height: 44px; background: rgba(10, 5, 20, 0.7); backdrop-filter: blur(15px);
+  border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; padding: 0 20px; z-index: 100;
 }
-.brand-title { font-weight: 700; font-size: 15px; background: linear-gradient(90deg, #ff2a6d, #05d9e8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.os-logo { font-weight: 700; font-size: 14px; background: linear-gradient(90deg, #ff2a6d, #05d9e8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.os-status { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #cbd5e1; }
+.live-indicator { background: rgba(34,197,94,0.2); color: #4ade80; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; border: 1px solid rgba(34,197,94,0.3); }
 
-.main-container { flex: 1; display: flex; justify-content: center; align-items: center; padding: 15px; overflow: hidden; }
-
-.panel-card {
-  width: 100%; max-width: 520px; height: 84vh;
-  background: rgba(14, 7, 26, 0.85); backdrop-filter: blur(25px);
-  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 20px;
-  box-shadow: 0 30px 80px rgba(0,0,0,0.85); display: flex; flex-direction: column; overflow: hidden;
+/* ESPACIO DE TRABAJO Y VENTANAS FLOTANTES */
+.os-workspace {
+  flex: 1; position: relative; padding: 20px; overflow: hidden;
+  display: flex; justify-content: center; align-items: center;
 }
 
-.panel-header {
-  height: 42px; background: rgba(255,255,255,0.04); border-bottom: 1px solid rgba(255,255,255,0.06);
+.os-window {
+  width: 100%; max-width: 560px; height: 82vh;
+  background: rgba(12, 6, 22, 0.85); backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px;
+  box-shadow: 0 30px 70px rgba(0,0,0,0.85); display: flex; flex-direction: column; overflow: hidden; position: absolute;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+.window-header {
+  height: 40px; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.06);
   display: flex; align-items: center; justify-content: space-between; padding: 0 16px; font-size: 12px; font-weight: 600; color: #cbd5e1;
 }
+.window-dots { display: flex; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot-red { background: #ff5f56; } .dot-yellow { background: #ffbd2e; } .dot-green { background: #27c93f; }
 
-.panel-body { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; }
+.window-content { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; }
 
-.nav-dock {
-  height: 65px; background: rgba(12, 6, 24, 0.75); backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: center; align-items: center; gap: 16px;
+/* DOCK INFERIOR DE NAVEGACIÓN */
+.os-dock {
+  height: 70px; background: rgba(10, 5, 20, 0.75); backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: center; align-items: center; gap: 14px; z-index: 100;
 }
-.dock-btn {
-  width: 44px; height: 44px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 12px; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 18px; transition: 0.2s;
+.dock-icon {
+  width: 48px; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
+  display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 20px; transition: 0.2s;
 }
-.dock-btn:hover { background: rgba(255,42,109,0.25); border-color: #ff2a6d; transform: translateY(-3px); }
-.dock-btn.active { background: rgba(5,217,232,0.25); border-color: #05d9e8; }
+.dock-icon:hover { transform: translateY(-5px) scale(1.08); background: rgba(255,42,109,0.2); border-color: #ff2a6d; box-shadow: 0 10px 20px rgba(255,42,109,0.3); }
+.dock-icon.active { background: rgba(5,217,232,0.2); border-color: #05d9e8; }
 
 .hidden { display: none !important; }
 </style>
@@ -307,98 +328,107 @@ button.btn-main:active { transform: scale(0.97); }
 <body>
 
 <div class="animated-bg"></div>
-<div class="glow-overlay"></div>
+<div class="particles"></div>
 
-<div id="authScreen">
-  <div class="auth-box">
+<!-- PANTALLA DE BLOQUEO / AUTENTICACIÓN -->
+<div id="osLockScreen">
+  <div class="lock-card">
     <h1>SEXCITES.COM</h1>
-    <p>Plataforma Social en Vivo</p>
+    <p>Sistema Operativo Social</p>
 
     <div id="regSpace">
-      <div style="font-size:12px; color:#05d9e8; margin-bottom:8px; font-weight:700;">📝 Crear Nueva Cuenta</div>
+      <div style="font-size:12px; color:#05d9e8; margin-bottom:10px; font-weight:700;">✨ Registro de Nueva Cuenta</div>
       <input type="text" id="rUser" placeholder="Usuario (mín. 3 caracteres)" autocomplete="off">
       <input type="password" id="rPass" placeholder="Contraseña (mín. 4 caracteres)" autocomplete="off">
-      <button class="btn-main" onclick="registerUser()">Registrarse</button>
-      <div class="switch-text">¿Ya tienes cuenta? <span onclick="toggleAuth('login')">Inicia sesión aquí</span></div>
+      <button class="os-btn" onclick="registerUser()">Crear Cuenta y Entrar</button>
+      <div class="auth-switch">¿Ya tienes cuenta? <span onclick="toggleAuthMode('login')">Iniciar Sesión</span></div>
     </div>
 
     <div id="logSpace" class="hidden">
-      <div style="font-size:12px; color:#ff2a6d; margin-bottom:8px; font-weight:700;">🔐 Acceso de Miembros</div>
-      <input type="text" id="lUser" placeholder="Usuario" autocomplete="off">
-      <input type="password" id="lPass" placeholder="Contraseña" autocomplete="off">
-      <button class="btn-main" onclick="loginUser()">Entrar a SEXCITES</button>
-      <div class="switch-text">¿Nuevo usuario? <span onclick="toggleAuth('register')">Crea una cuenta</span></div>
+      <div style="font-size:12px; color:#ff2a6d; margin-bottom:10px; font-weight:700;">🔐 Acceso al Sistema</div>
+      <input type="text" id="lUser" placeholder="Tu Usuario" autocomplete="off">
+      <input type="password" id="lPass" placeholder="Tu Contraseña" autocomplete="off">
+      <button class="os-btn" onclick="loginUser()">Entrar al Sistema Operativo</button>
+      <div class="auth-switch">¿Nuevo en SEXCITES? <span onclick="toggleAuthMode('register')">Crear Perfil</span></div>
     </div>
 
-    <div id="authError" style="color:#f87171; font-size:11px; margin-top:10px; font-weight:600;"></div>
+    <div id="authAlert" style="color:#f87171; font-size:11px; margin-top:10px; font-weight:600;"></div>
   </div>
 </div>
 
-<div id="appWorkspace">
-  <div class="top-bar">
-    <div class="brand-title">SEXCITES.COM</div>
-    <div style="display:flex; align-items:center; gap:10px; font-size:12px;">
-      <span id="userDisplay" style="color:#05d9e8; font-weight:700;"></span>
-      <span style="background:rgba(34,197,94,0.2); color:#4ade80; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700;">● ACTIVO 24/7</span>
+<!-- ENTORNO DE ESCRITORIO OS -->
+<div id="osDesktop">
+  <div class="os-topbar">
+    <div class="os-logo">SEXCITES.COM // CLOUD OS</div>
+    <div class="os-status">
+      <span id="osUserDisplay" style="font-weight:700; color:#05d9e8;"></span>
+      <span class="live-indicator">● EN VIVO 24/7</span>
     </div>
   </div>
 
-  <div class="main-container">
-    <div class="panel-card" id="panelWall">
-      <div class="panel-header">
-        <span>Muro Público y Fotos</span>
+  <div class="os-workspace">
+    <!-- VENTANA DEL MURO / FEED -->
+    <div class="os-window" id="appWall">
+      <div class="window-header">
+        <div class="window-dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+        <span>Muro y Publicaciones en Vivo</span>
         <span>🌐</span>
       </div>
-      <div class="panel-body">
-        <textarea id="wallText" placeholder="Comparte fotos, pensamientos o actualizaciones..." style="height:55px; font-size:12px; margin-bottom:6px;"></textarea>
-        <div style="display:flex; gap:6px; margin-bottom:10px;">
+      <div class="window-content">
+        <textarea id="wallText" placeholder="Comparte algo con el ecosistema..." style="height:60px; font-size:12px; margin-bottom:8px;"></textarea>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
           <input type="file" id="wallImg" accept="image/*" style="display:none;" onchange="previewWallImg(event)">
-          <button class="btn-main" onclick="document.getElementById('wallImg').click()" style="width:auto; padding:6px 12px; background:#334155; font-size:11px;">📷 Foto</button>
-          <button class="btn-main" onclick="createPost()" style="font-size:11px; flex:1;">Publicar</button>
+          <button class="os-btn" onclick="document.getElementById('wallImg').click()" style="width:auto; padding:8px 14px; background:#334155; font-size:11px;">📷 Adjuntar Foto</button>
+          <button class="os-btn" onclick="createPost()" style="font-size:11px; flex:1;">Publicar Ahora</button>
         </div>
         <div id="wallFeed" style="flex:1; overflow-y:auto; font-size:11px; display:flex; flex-direction:column; gap:8px;"></div>
       </div>
     </div>
 
-    <div class="panel-card hidden" id="panelChat">
-      <div class="panel-header">
-        <span>Chat Privado Seguro</span>
+    <!-- VENTANA DE CHAT PRIVADO -->
+    <div class="os-window hidden" id="appChat">
+      <div class="window-header">
+        <div class="window-dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+        <span>Mensajería Segura SEXCITES</span>
         <span>💬</span>
       </div>
-      <div class="panel-body">
-        <div style="display:flex; gap:6px; margin-bottom:6px;">
-          <input type="text" id="chatPeer" placeholder="Usuario amigo..." style="margin:0; font-size:11px;" autocomplete="off">
-          <button class="btn-main" onclick="loadChat()" style="width:90px; margin:0; font-size:11px;">Abrir Chat</button>
+      <div class="window-content">
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <input type="text" id="chatPeer" placeholder="Usuario destino..." style="margin:0; font-size:11px;" autocomplete="off">
+          <button class="os-btn" onclick="loadChat()" style="width:100px; margin:0; font-size:11px;">Abrir Chat</button>
         </div>
-        <div id="chatBox" style="flex:1; background:rgba(0,0,0,0.5); border-radius:10px; padding:8px; overflow-y:auto; font-size:11px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.05);">
-          <div style="color:#64748b; text-align:center; padding-top:60px;">Introduce un usuario arriba para cargar el historial permanente.</div>
+        <div id="chatBox" style="flex:1; background:rgba(0,0,0,0.45); border-radius:12px; padding:10px; overflow-y:auto; font-size:11px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.05);">
+          <div style="color:#64748b; text-align:center; padding-top:60px;">Introduce un usuario arriba para cargar el historial cifrado.</div>
         </div>
         <div style="display:flex; gap:6px;">
-          <input type="text" id="msgText" placeholder="Escribe un mensaje privado..." style="margin:0; font-size:11px;" autocomplete="off">
+          <input type="text" id="msgText" placeholder="Escribe tu mensaje..." style="margin:0; font-size:11px;" autocomplete="off">
           <input type="file" id="chatImg" accept="image/*" style="display:none;" onchange="sendChatPhoto(event)">
-          <button class="btn-main" onclick="document.getElementById('chatImg').click()" style="width:38px; margin:0; background:#334155;" title="Foto">📷</button>
-          <button class="btn-main" onclick="sendChatMessage()" style="width:65px; margin:0; font-size:11px;">Enviar</button>
+          <button class="os-btn" onclick="document.getElementById('chatImg').click()" style="width:42px; margin:0; background:#334155;" title="Foto">📷</button>
+          <button class="os-btn" onclick="sendChatMessage()" style="width:70px; margin:0; font-size:11px;">Enviar</button>
         </div>
       </div>
     </div>
 
-    <div class="panel-card hidden" id="panelFriends">
-      <div class="panel-header">
-        <span>Conexiones y Solicitudes</span>
+    <!-- VENTANA DE AMIGOS / CONEXIONES -->
+    <div class="os-window hidden" id="appFriends">
+      <div class="window-header">
+        <div class="window-dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+        <span>Red y Conexiones</span>
         <span>👥</span>
       </div>
-      <div class="panel-body">
-        <input type="text" id="friendInput" placeholder="Usuario de tu amigo..." style="font-size:11px;" autocomplete="off">
-        <button class="btn-main" onclick="sendFriendReq()" style="font-size:11px;">Enviar Solicitud</button>
+      <div class="window-content">
+        <input type="text" id="friendInput" placeholder="Nombre de usuario..." style="font-size:11px;" autocomplete="off">
+        <button class="os-btn" onclick="sendFriendReq()" style="font-size:11px;">Enviar Solicitud de Amistad</button>
         <div id="friendNotifs" style="margin-top:12px; font-size:11px; color:#cbd5e1; display:flex; flex-direction:column; gap:6px;"></div>
       </div>
     </div>
   </div>
 
-  <div class="nav-dock">
-    <div class="dock-btn active" onclick="switchPanel('Wall')" title="Muro">🌐</div>
-    <div class="dock-btn" onclick="switchPanel('Chat')" title="Chat">💬</div>
-    <div class="dock-btn" onclick="switchPanel('Friends')" title="Amigos">👥</div>
+  <!-- DOCK DEL OS -->
+  <div class="os-dock">
+    <div class="dock-icon active" onclick="switchApp('Wall')" title="Muro Público">🌐</div>
+    <div class="dock-icon" onclick="switchApp('Chat')" title="Chat Privado">💬</div>
+    <div class="dock-icon" onclick="switchApp('Friends')" title="Conexiones">👥</div>
   </div>
 </div>
 
@@ -408,8 +438,8 @@ let currentUser = null;
 let currentPeer = null;
 let wallImageBase64 = null;
 
-function toggleAuth(mode) {
-  document.getElementById('authError').innerText = '';
+function toggleAuthMode(mode) {
+  document.getElementById('authAlert').innerText = '';
   if(mode === 'login') {
     document.getElementById('regSpace').classList.add('hidden');
     document.getElementById('logSpace').classList.remove('hidden');
@@ -419,12 +449,12 @@ function toggleAuth(mode) {
   }
 }
 
-function switchPanel(panelName) {
-  ['Wall', 'Chat', 'Friends'].forEach(p => {
-    document.getElementById('panel' + p).classList.add('hidden');
+function switchApp(appName) {
+  ['Wall', 'Chat', 'Friends'].forEach(app => {
+    document.getElementById('app' + app).classList.add('hidden');
   });
-  document.getElementById('panel' + panelName).classList.remove('hidden');
-  document.querySelectorAll('.dock-btn').forEach(btn => btn.classList.remove('active'));
+  document.getElementById('app' + appName).classList.remove('hidden');
+  document.querySelectorAll('.dock-icon').forEach(icon => icon.classList.remove('active'));
   event.currentTarget.classList.add('active');
 }
 
@@ -438,9 +468,9 @@ async function registerUser() {
   });
   const data = await res.json();
   if(data.success) {
-    startSession(data.user);
+    bootOS(data.user);
   } else {
-    document.getElementById('authError').innerText = data.error;
+    document.getElementById('authAlert').innerText = data.error;
   }
 }
 
@@ -454,35 +484,35 @@ async function loginUser() {
   });
   const data = await res.json();
   if(data.success) {
-    startSession(data.user);
+    bootOS(data.user);
   } else {
-    document.getElementById('authError').innerText = data.error;
+    document.getElementById('authAlert').innerText = data.error;
   }
 }
 
-function startSession(user) {
+function bootOS(user) {
   currentUser = user;
-  document.getElementById('authScreen').style.opacity = '0';
+  document.getElementById('osLockScreen').style.opacity = '0';
   setTimeout(() => {
-    document.getElementById('authScreen').classList.add('hidden');
-    document.getElementById('appWorkspace').classList.add('active');
-    document.getElementById('userDisplay').innerText = '@' + user.username;
+    document.getElementById('osLockScreen').classList.add('hidden');
+    document.getElementById('osDesktop').classList.add('active');
+    document.getElementById('osUserDisplay').innerText = '@' + user.username;
     socket.emit('join', user.username);
     loadWallPosts();
-  }, 400);
+  }, 500);
 }
 
 function previewWallImg(e) {
   const file = e.target.files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = function(evt) { wallImageBase64 = evt.target.result; alert('Foto adjuntada correctamente.'); };
+  reader.onload = function(evt) { wallImageBase64 = evt.target.result; alert('¡Imagen adjuntada correctamente!'); };
   reader.readAsDataURL(file);
 }
 
 function createPost() {
   const text = document.getElementById('wallText').value;
-  if(!text && !wallImageBase64) return alert('Escribe algo o adjunta una foto.');
+  if(!text && !wallImageBase64) return alert('Escribe texto o adjunta una imagen.');
   socket.emit('post:create', { author: currentUser.username, text, image: wallImageBase64 });
   document.getElementById('wallText').value = '';
   wallImageBase64 = null;
@@ -527,8 +557,8 @@ function renderPost(p) {
                   '</div>' +
                   commentsHtml +
                   '<div style="display:flex; gap:6px; margin-top:8px;">' +
-                    '<input type="text" id="comm_txt_' + p.id + '" placeholder="Escribe un comentario..." style="margin:0; font-size:10px; padding:6px;">' +
-                    '<button class="btn-main" onclick="sendComment(\x27' + p.id + '\x27)" style="width:60px; margin:0; padding:6px; font-size:10px;">Responder</button>' +
+                    '<input type="text" id="comm_txt_' + p.id + '" placeholder="Responder..." style="margin:0; font-size:10px; padding:6px;">' +
+                    '<button class="os-btn" onclick="sendComment(\x27' + p.id + '\x27)" style="width:60px; margin:0; padding:6px; font-size:10px;">Enviar</button>' +
                   '</div>';
   feed.prepend(div);
 }
@@ -544,7 +574,7 @@ socket.on('post:liked', (data) => {
 
 function sharePost(postId) {
   navigator.clipboard.writeText(window.location.origin + '#post-' + postId);
-  alert('Enlace del post copiado al portapapeles.');
+  alert('Enlace copiado al portapapeles.');
 }
 
 function sendComment(postId) {
@@ -564,7 +594,7 @@ socket.on('post:commented', (data) => {
 
 function loadChat() {
   const peer = document.getElementById('chatPeer').value.trim().toLowerCase().replace('@','');
-  if(!peer) return alert('Introduce un usuario válido.');
+  if(!peer) return alert('Ingresa un usuario válido');
   currentPeer = peer;
   socket.emit('chat:load', { user1: currentUser.username, user2: peer });
 }
@@ -573,23 +603,23 @@ socket.on('chat:history-loaded', (data) => {
   const box = document.getElementById('chatBox');
   box.innerHTML = '';
   if(data.history.length === 0) {
-    box.innerHTML = '<div style="color:#64748b; text-align:center;">Aún no hay historial con @' + data.peer + '</div>';
+    box.innerHTML = '<div style="color:#64748b; text-align:center;">No hay historial previo con @' + data.peer + '</div>';
     return;
   }
-  data.history.forEach(m => renderMsg(m));
+  data.history.length === 0 ? null : data.history.forEach(m => renderMsg(m));
   box.scrollTop = box.scrollHeight;
 });
 
 function sendChatMessage() {
   const text = document.getElementById('msgText').value;
-  if(!currentPeer || !text) return alert('Abre un chat activo primero.');
+  if(!currentPeer || !text) return alert('Abre una ventana de chat e introduce un texto.');
   socket.emit('chat:message', { sender: currentUser.username, recipient: currentPeer, text, type: 'text' });
   document.getElementById('msgText').value = '';
 }
 
 function sendChatPhoto(e) {
   const file = e.target.files[0];
-  if(!file || !currentPeer) return alert('Selecciona un destinatario de chat primero.');
+  if(!file || !currentPeer) return alert('Selecciona un destinatario primero.');
   const reader = new FileReader();
   reader.onload = function(evt) {
     socket.emit('chat:message', { sender: currentUser.username, recipient: currentPeer, text: evt.target.result, type: 'image' });
@@ -622,7 +652,7 @@ function sendFriendReq() {
 }
 
 socket.on('friend:request-received', (data) => {
-  document.getElementById('friendNotifs').innerHTML += '<div style="background:rgba(255,255,255,0.04); padding:8px; border-radius:8px;">Solicitud de: <b>@' + data.sender + '</b></div>';
+  document.getElementById('friendNotifs').innerHTML += '<div style="background:rgba(255,255,255,0.04); padding:8px; border-radius:8px;">Nueva solicitud de: <b>@' + data.sender + '</b></div>';
 });
 
 socket.on('error-msg', (data) => { alert(data.message); });
@@ -634,5 +664,5 @@ socket.on('success-msg', (data) => { alert(data.message); });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM activo en el puerto ' + PORT);
+  console.log('SEXCITES.COM OS Live running on port ' + PORT);
 });

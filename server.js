@@ -25,7 +25,6 @@ const BTC_WALLET = "bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s";
 const ETH_WALLET = "0x4ABCf532fed9D9CFD0d3C4654cDFB56D02cFF21c";
 const ADMIN_EMAIL = "po80payments@gmail.com";
 
-// Helper for unified and ordered chat IDs
 function getChatId(id1, id2) {
   return id1 < id2 ? id1 + '_' + id2 : id2 + '_' + id1;
 }
@@ -34,10 +33,9 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V17.6 LIVE & FULLY OPERATIONAL - SYSTEM VERIFIED 24/7');
+  res.status(200).send('SEXCITES.COM V17.7 LIVE & FULLY OPERATIONAL');
 });
 
-// Strict registration: 1 device = 1 account + 500 Free Limit Blocker (501+ requires payment first)
 app.post('/api/register', (req, res) => {
   const { username, email, password, deviceId, ip } = req.body;
   
@@ -55,7 +53,6 @@ app.post('/api/register', (req, res) => {
     return res.json({ success: false, error: 'Multi-account blocked: An account is already registered from this device.' });
   }
 
-  // STRICT 1 TO 500 FREE BLOCKER SYSTEM (501+ forced to pay)
   if (users.size >= 500) {
     return res.json({ 
       success: false, 
@@ -70,7 +67,7 @@ app.post('/api/register', (req, res) => {
     email: (email || '').trim().toLowerCase(),
     password: password,
     isFree: true,
-    vipMonths: 2, // 2 Months Free for users 1 to 500
+    vipMonths: 2,
     createdAt: Date.now()
   };
 
@@ -83,7 +80,7 @@ app.post('/api/register', (req, res) => {
   res.json({ success: true, user: newUser });
 });
 
-// Fixed Sign In / Login to reliably match existing users and emails without any failure
+// Direct Login endpoint
 app.post('/api/login', (req, res) => {
   const { identifier, password } = req.body;
   const cleanId = (identifier || '').trim().toLowerCase().replace('@', '');
@@ -111,7 +108,6 @@ app.post('/api/login', (req, res) => {
   res.json({ success: true, user });
 });
 
-// Request payment code
 app.post('/api/pay-request', (req, res) => {
   const { userId, planType } = req.body;
   if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
@@ -133,7 +129,6 @@ app.post('/api/pay-request', (req, res) => {
   });
 });
 
-// Redeem hidden code system
 app.post('/api/redeem', (req, res) => {
   const { userId, code } = req.body;
   if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
@@ -165,7 +160,6 @@ app.post('/api/redeem', (req, res) => {
   res.json({ success: true, message: 'Code successfully redeemed! VIP activated for ' + targetMonths + ' months.' });
 });
 
-// Wall Post Creation
 app.post('/api/post', (req, res) => {
   const { userId, text, image } = req.body;
   const user = users.get(userId);
@@ -186,7 +180,6 @@ app.post('/api/post', (req, res) => {
   res.json({ success: true, post: newPost });
 });
 
-// Wall Post Like Toggle
 app.post('/api/post/like', (req, res) => {
   const { userId, postId } = req.body;
   const user = users.get(userId);
@@ -210,7 +203,6 @@ app.post('/api/post/like', (req, res) => {
   res.json({ success: true, liked, likesCount: targetPost.likes.length });
 });
 
-// Wall Comment / Reply Creation
 app.post('/api/post/comment', (req, res) => {
   const { userId, postId, text, image } = req.body;
   const user = users.get(userId);
@@ -244,7 +236,7 @@ app.get('/api/posts', (req, res) => {
 });
 
 // ==========================================
-// SOCKET.IO — REAL-TIME 0.1s
+// SOCKET.IO — REAL-TIME 24/7
 // ==========================================
 io.on('connection', (socket) => {
   let currentUserId = null;
@@ -327,7 +319,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Front-End Interface (Strictly in English, with fully verified Sign In toggle, 24/7 Translate Widget, Wall, Real-Time Chat & Photos)
+// Front-End Interface (Pure Black background, Neon Hearts, 24/7 Translate Widget, Independent Sign In & Register tabs)
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -418,7 +410,6 @@ body { top: 0 !important; }
 h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; background: linear-gradient(90deg, #ff2a6d, #05d9e8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .subtitle { font-size: 11px; text-align: center; color: #a5b4fc; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px; }
 
-/* FOUNDER DEBUT INFO BOX */
 .founder-intro-box {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 42, 109, 0.3);
@@ -446,7 +437,6 @@ h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; 
   font-weight: 600;
 }
 
-/* SPECIAL PHRASE & TERMS SECTION */
 .special-phrase-box {
   margin-top: 12px;
   text-align: center;
@@ -503,7 +493,6 @@ button:active { transform: scale(0.98); }
 </head>
 <body>
 
-<!-- SEXCITES 24/7 CUSTOM TRANSLATE WIDGET -->
 <div class="translate-float">
   <span class="translate-brand">SEXCITES Translate</span>
   <div id="google_translate_element"></div>
@@ -520,12 +509,11 @@ button:active { transform: scale(0.98); }
 </script>
 <script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 
-<!-- FLOATING NEON HEARTS ANIMATION CONTAINER -->
 <div class="hearts-container" id="hearts"></div>
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private Community 18+ • Real-Time V17.6</div>
+  <div class="subtitle">Private Community 18+ • Real-Time V17.7</div>
 
   <!-- AUTH VIEW -->
   <div id="authView">
@@ -543,7 +531,7 @@ button:active { transform: scale(0.98); }
       <button onclick="registerUser()">Create Account (1 Device Block)</button>
     </div>
 
-    <!-- SIGN IN FORM (Separated completely so login fields don't mix with registration) -->
+    <!-- SIGN IN FORM (Fully independent and direct) -->
     <div id="logForm" class="hidden">
       <div style="font-size:11px; color:#05d9e8; margin-bottom:8px; text-align:center;">🔐 Sign In to your existing account</div>
       <input type="text" id="lUser" placeholder="Username or Email" autocomplete="off">
@@ -553,7 +541,6 @@ button:active { transform: scale(0.98); }
 
     <div id="authError" style="color:#f87171; font-size:12px; text-align:center; margin-top:10px;"></div>
 
-    <!-- FOUNDER DEBUT & FEATURE DESCRIPTION -->
     <div class="founder-intro-box" id="founderIntroContainer">
       <h3>🚀 Official Grand Debut (09-06-2026)</h3>
       <p>Welcome to the official launch of <b>SEXCITES.com</b>. A verified private community built for seamless connections.</p>
@@ -565,12 +552,10 @@ button:active { transform: scale(0.98); }
       <div class="founder-signature">With full commitment to the future,<br><b>Jhon Gonzales (Founder)</b></div>
     </div>
 
-    <!-- SPECIAL PHRASE -->
     <div class="special-phrase-box">
       ✨ "Giving yourself a chance in life is never too late" ✨
     </div>
 
-    <!-- TERMS AND CONDITIONS -->
     <div class="terms-footer">
       By registering you accept our <a href="#" onclick="alert('Terms & Conditions: Platform strictly exclusive for adults 18+. Privacy guaranteed under strict device security controls.'); return false;">Terms & Conditions</a> and Privacy Policy. © 2026 SEXCITES.com.
     </div>
@@ -662,7 +647,6 @@ let currentUser = null;
 let currentPeerId = null;
 let attachedWallImage = null;
 
-// GENERATE DYNAMIC FLOATING NEON HEARTS
 function createHeart() {
   const container = document.getElementById('hearts');
   if(!container) return;
@@ -850,7 +834,6 @@ function sendPhoto(event) {
   reader.readAsDataURL(file);
 }
 
-// WALL, LIKES, COMMENTS & SHARE SYSTEM
 function previewWallImage(event) {
   const file = event.target.files[0];
   if(!file) return;
@@ -1042,5 +1025,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V17.6 running on port ' + PORT);
+  console.log('SEXCITES.COM V17.7 running on port ' + PORT);
 });

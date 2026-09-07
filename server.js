@@ -48,7 +48,7 @@ function getClientIP(req) {
 }
 
 // ==========================================
-// API DE AUTENTICACIÓN Y DATOS
+// API DE AUTENTICACIÓN Y SUSCRIPCIÓN
 // ==========================================
 app.post('/api/register', (req, res) => {
   const { username, password, plan } = req.body;
@@ -64,20 +64,21 @@ app.post('/api/register', (req, res) => {
   }
 
   const totalUsers = Object.keys(db.users).length;
-  if (totalUsers < 500 && db.ips[clientIP]) {
-    return res.json({ success: false, error: 'Bloqueo de seguridad: Ya se registró una cuenta desde esta red/IP.' });
-  }
-
   let subscriptionStatus = '';
   let expiresAt = 0;
 
+  // Lógica de lanzamiento: Primeras 500 cuentas gratis por 2 meses con control estricto por IP
   if (totalUsers < 500) {
+    if (db.ips[clientIP]) {
+      return res.json({ success: false, error: 'Bloqueo de seguridad: Ya se registró una cuenta gratuita desde esta red/IP.' });
+    }
     subscriptionStatus = 'free_launch_2m';
-    expiresAt = Date.now() + (60 * 24 * 60 * 60 * 1000);
+    expiresAt = Date.now() + (60 * 24 * 60 * 60 * 1000); // 2 meses
     db.ips[clientIP] = cleanUser;
   } else {
+    // Si se pasa de 500, el plan de pago es obligatorio
     if (plan !== '6m' && plan !== '12m') {
-      return res.json({ success: false, error: 'Límite de 500 cuentas gratis alcanzado. Selecciona un plan de pago.' });
+      return res.json({ success: false, error: 'Se alcanzó el límite de 500 cuentas gratis. Debes seleccionar un plan de pago.' });
     }
     subscriptionStatus = plan === '6m' ? 'paid_6m' : 'paid_12m';
     const days = plan === '6m' ? 180 : 365;
@@ -136,7 +137,7 @@ app.get('/api/init-data', (req, res) => {
 });
 
 // ==========================================
-// MOTOR EN TIEMPO REAL (WEBSOCKETS)
+// WEBSOCKETS (TIEMPO REAL)
 // ==========================================
 io.on('connection', (socket) => {
   socket.on('join', (username) => {
@@ -241,7 +242,7 @@ io.on('connection', (socket) => {
 });
 
 // ==========================================
-// INTERFAZ FRONT-END PROFESIONAL (SEXCITES.COM)
+// INTERFAZ FRONT-END (SEXCITES.COM)
 // ==========================================
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -342,8 +343,8 @@ button {
 button:active { transform: scale(0.98); }
 button:hover { opacity: 0.9; }
 
-.plans-box { display: none; margin-top: 8px; padding: 8px; background: rgba(255,42,109,0.08); border-radius: 8px; border: 1px solid #ff2a6d; }
-.plan-opt { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 4px; cursor: pointer; }
+.plans-box { display: none; margin-top: 8px; margin-bottom: 8px; padding: 10px; background: rgba(255,42,109,0.08); border-radius: 8px; border: 1px solid #ff2a6d; }
+.plan-opt { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 6px; cursor: pointer; color: #fff; }
 .hidden { display: none !important; }
 
 .os-dock { 
@@ -375,7 +376,7 @@ button:hover { opacity: 0.9; }
 
 <div class="container">
   <h1>SEXCITES.COM</h1>
-  <div class="counter-banner" id="counterBanner">Verificando sistema de red seguro...</div>
+  <div class="counter-banner" id="counterBanner">Verificando estado de red...</div>
 
   <!-- SECCIÓN DE AUTENTICACIÓN -->
   <div id="authSection">
@@ -383,10 +384,11 @@ button:hover { opacity: 0.9; }
     <input type="text" id="regUser" placeholder="Usuario (ej. alex)" autocomplete="off">
     <input type="password" id="regPass" placeholder="Contraseña segura" autocomplete="off">
     
+    <!-- CONTENEDOR DE PLANES DE PAGO (SE ACTIVA AL PASAR LOS 500 REGISTROS GRATUITOS) -->
     <div id="plansContainer" class="plans-box">
-      <div style="font-size: 11px; color: #ff2a6d; font-weight: 700; margin-bottom: 4px;">Límite gratuito alcanzado. Selecciona un plan:</div>
-      <label class="plan-opt"><input type="radio" name="launchPlan" value="6m" checked> 6 Meses — $15.99 USD</label>
-      <label class="plan-opt"><input type="radio" name="launchPlan" value="12m"> 12 Meses — $28.99 USD</label>
+      <div style="font-size: 11px; color: #ff2a6d; font-weight: 700; margin-bottom: 6px;">⚠️ Límite de 500 cuentas gratis alcanzado. Selecciona tu plan de suscripción:</div>
+      <label class="plan-opt"><input type="radio" name="launchPlan" value="6m" checked> Plan 6 Meses — <b>$15.99 USD</b></label>
+      <label class="plan-opt"><input type="radio" name="launchPlan" value="12m"> Plan 12 Meses (Anual) — <b>$28.99 USD</b></label>
     </div>
 
     <button onclick="registerUser()" style="margin-top: 6px;">Crear Cuenta</button>
@@ -527,11 +529,12 @@ socket.on('stats:update', (data) => {
 function updateCounterBanner(total) {
   const banner = document.getElementById('counterBanner');
   const plansContainer = document.getElementById('plansContainer');
+  
   if (total < 500) {
-    banner.innerHTML = \`🎉 Lanzamiento: Quedan <b>\${500 - total}</b> cuentas gratis (2 meses sin costo).\`;
+    banner.innerHTML = \`🎉 <b>Promoción de Lanzamiento:</b> Quedan <b>\${500 - total}</b> cuentas gratis (2 meses sin costo).\`;
     plansContainer.classList.add('hidden');
   } else {
-    banner.innerHTML = \`⚠️ Límite de 500 cuentas gratis alcanzado. Selecciona un plan.\`;
+    banner.innerHTML = \`⚠️ <b>Cupo de lanzamiento lleno (500/500).</b> Las nuevas cuentas requieren plan de pago.\`;
     plansContainer.classList.remove('hidden');
   }
 }

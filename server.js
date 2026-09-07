@@ -15,16 +15,16 @@ app.use(express.urlencoded({ extended: true }));
 // ==========================================
 const users = new Map();          // id -> userObj
 const usersByName = new Map();    // username -> id
-const devices = new Map();        // deviceKey -> userId (1 account per device)
+const devices = new Map();        // deviceKey -> userId (1 account per device - anti multicuentas)
 const friends = new Map();        // userId -> Set(friendIds)
 const friendRequests = new Map(); // userId -> Map(senderId -> requestObj)
 const messages = new Map();       // chatId -> [ {senderId, text, timestamp} ]
 const posts = [];                 // [ {id, author, text, timestamp, likes} ]
-const txRecords = new Set();      // Used TxIDs (Anti-scam / Anti-duplicate)
 const userCodes = new Map();      // userId -> [ {code, plan, months, active} ]
 
 const BTC_WALLET = "bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s";
 const ETH_WALLET = "0x4ABCf532fed9D9CFD0d3C4654cDFB56D02cFF21c";
+const ADMIN_EMAIL = "po80payments@gmail.com";
 
 // Helper for unified and ordered chat IDs
 function getChatId(id1, id2) {
@@ -38,7 +38,7 @@ app.get('/health', (req, res) => {
   res.status(200).send('SEXCITES.COM V9 LIVE & OPERATIONAL');
 });
 
-// Strict registration (1 per device, quota control 1-500)
+// Strict registration (1 device = 1 account, anti multi-account block)
 app.post('/api/register', (req, res) => {
   const { username, email, password, deviceId, ip } = req.body;
   
@@ -53,7 +53,7 @@ app.post('/api/register', (req, res) => {
 
   const deviceKey = (deviceId || 'unknown') + '_' + (ip || '127.0.0.1');
   if (devices.has(deviceKey)) {
-    return res.json({ success: false, error: 'An account is already registered from this device/network.' });
+    return res.json({ success: false, error: 'Multi-account blocked: An account is already registered from this device.' });
   }
 
   if (users.size >= 500) {
@@ -106,29 +106,26 @@ app.post('/api/login', (req, res) => {
   res.json({ success: true, user });
 });
 
-// Verify payment on Blockchain (BTC / ETH) and generate anti-scam hidden code
-app.post('/api/pay-verify', (req, res) => {
-  const { userId, txid, planType } = req.body;
+// Request payment code with 4 months extra bonus guarantee if delayed
+app.post('/api/pay-request', (req, res) => {
+  const { userId, planType } = req.body;
   if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
-  if (!txid || txid.trim().length < 10) return res.json({ success: false, error: 'Invalid TxID.' });
-
-  const cleanTx = txid.trim();
-  if (txRecords.has(cleanTx)) {
-    return res.json({ success: false, error: 'This TxID has already been used.' });
-  }
 
   let months = 4;
   if (planType === 'VIP') months = 8;
   if (planType === 'ONE_TIME') months = 12;
-
-  txRecords.add(cleanTx);
 
   const hiddenCode = 'SEXCITES-' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
   
   if (!userCodes.has(userId)) userCodes.set(userId, []);
   userCodes.get(userId).push({ code: hiddenCode, plan: planType, months, active: true, used: false });
 
-  res.json({ success: true, hiddenCode, message: 'Payment successfully verified on the Blockchain.' });
+  res.json({ 
+    success: true, 
+    hiddenCode, 
+    adminEmail: ADMIN_EMAIL,
+    message: 'Reference generated. Send your payment screenshot to ' + ADMIN_EMAIL + ' with this code. If the system delays, we will add 4 extra months free to your welcome package!' 
+  });
 });
 
 // Redeem hidden code
@@ -163,13 +160,6 @@ app.post('/api/redeem', (req, res) => {
   res.json({ success: true, message: 'Code successfully redeemed! VIP activated for ' + targetMonths + ' months.' });
 });
 
-// Get user hidden codes
-app.get('/api/my-codes/:userId', (req, res) => {
-  const userId = req.params.userId;
-  const codes = userCodes.get(userId) || [];
-  res.json({ success: true, codes });
-});
-
 // Post on SEXCITES Wall
 app.post('/api/post', (req, res) => {
   const { userId, text } = req.body;
@@ -185,7 +175,7 @@ app.post('/api/post', (req, res) => {
   };
 
   posts.unshift(newPost);
-  io.emit('new-post', newPost); // Real-time broadcast to all connected clients
+  io.emit('new-post', newPost);
   res.json({ success: true, post: newPost });
 });
 
@@ -194,7 +184,7 @@ app.get('/api/posts', (req, res) => {
 });
 
 // ==========================================
-// SOCKET.IO — REAL-TIME 0.1s
+// SOCKET.IO — REAL-TIME 0.1s (Live messaging & friends)
 // ==========================================
 io.on('connection', (socket) => {
   let currentUserId = null;
@@ -204,7 +194,6 @@ io.on('connection', (socket) => {
     socket.join(userId);
   });
 
-  // Add friend by username only (Ex: @LenoxJG)
   socket.on('friend:request', (data) => {
     const { senderId, targetUsername } = data;
     const cleanTarget = (targetUsername || '').replace('@', '').trim().toLowerCase();
@@ -227,12 +216,10 @@ io.on('connection', (socket) => {
     const requestObj = { senderId, senderUsername: sender.username, timestamp: Date.now() };
     reqsMap.set(senderId, requestObj);
 
-    // Send real-time notification to recipient inbox
     io.to(targetId).emit('friend:request-received', requestObj);
     socket.emit('success-msg', { message: 'Friend request successfully sent to @' + cleanTarget });
   });
 
-  // Accept friend request
   socket.on('friend:accept', (data) => {
     const { userId, senderId } = data;
     const reqsMap = friendRequests.get(userId);
@@ -243,13 +230,11 @@ io.on('connection', (socket) => {
       friends.get(userId).add(senderId);
       friends.get(senderId).add(userId);
 
-      // Notify both in real-time
       io.to(userId).emit('friend:accepted', { friendId: senderId });
       io.to(senderId).emit('friend:accepted', { friendId: userId });
     }
   });
 
-  // Load instant private chat history
   socket.on('chat:load', (data) => {
     const { userId, peerId } = data;
     const chatId = getChatId(userId, peerId);
@@ -257,7 +242,6 @@ io.on('connection', (socket) => {
     socket.emit('chat:loaded', { peerId, history });
   });
 
-  // Send live message in 0.1s
   socket.on('chat:message', (data) => {
     const { senderId, recipientId, text } = data;
     if (!text || !users.has(senderId) || !users.has(recipientId)) return;
@@ -268,7 +252,6 @@ io.on('connection', (socket) => {
     const msgObj = { senderId, text: text.trim(), timestamp: Date.now() };
     messages.get(chatId).push(msgObj);
 
-    // Emit instantly to both ends
     io.to(recipientId).emit('chat:incoming', { senderId, ...msgObj });
     io.to(senderId).emit('chat:incoming', { senderId, ...msgObj });
   });
@@ -280,7 +263,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Serve Front-End Web Interface (HTML/CSS/JS Premium Glassmorphism)
+// Serve Front-End Web Interface with Google Translate Widget 24/7
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -302,13 +285,47 @@ body {
   overflow-x: hidden;
   position: relative;
 }
-/* Clean and soft floating hearts */
 .hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: hidden; }
 .heart { position: absolute; bottom: -50px; font-size: 20px; animation: floatUp 6s linear infinite; filter: drop-shadow(0 0 8px rgba(255,105,180,0.6)); opacity: 0.8; }
 @keyframes floatUp {
   0% { transform: translateY(0) scale(0.8); opacity: 0.8; }
   100% { transform: translateY(-110vh) scale(1.2); opacity: 0; }
 }
+/* TRANSLATE FLOATING WIDGET 24/7 */
+.translate-float {
+  position: fixed;
+  top: 15px;
+  right: 15px;
+  background: rgba(18, 22, 48, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 117, 140, 0.4);
+  padding: 8px 12px;
+  border-radius: 30px;
+  box-shadow: 0 4px 20px rgba(255, 117, 140, 0.3);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: pulseGlow 3s infinite;
+}
+@keyframes pulseGlow {
+  0% { box-shadow: 0 0 10px rgba(255, 117, 140, 0.3); }
+  50% { box-shadow: 0 0 22px rgba(255, 117, 140, 0.7); }
+  100% { box-shadow: 0 0 10px rgba(255, 117, 140, 0.3); }
+}
+.goog-te-combo {
+  background: #1e293b !important;
+  color: #fff !important;
+  border: 1px solid rgba(255,255,255,0.2) !important;
+  padding: 6px 10px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+  outline: none !important;
+  cursor: pointer;
+}
+.goog-te-banner-frame { display: none !important; }
+body { top: 0 !important; }
+
 .app-container {
   width: 100%;
   max-width: 460px;
@@ -357,6 +374,23 @@ button:active { transform: scale(0.98); }
 </head>
 <body>
 
+<!-- FLOATING TRANSLATOR 24/7 -->
+<div class="translate-float">
+  <span style="font-size:14px;">🌐</span>
+  <div id="google_translate_element"></div>
+</div>
+<script type="text/javascript">
+  function googleTranslateElementInit() {
+    new google.translate.TranslateElement({
+      pageLanguage: 'en',
+      includedLanguages: 'es,en,fr,de,pt,it,ru,ja,zh-CN,ar,hi',
+      layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+      autoDisplay: false
+    }, 'google_translate_element');
+  }
+</script>
+<script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+
 <div class="hearts-container" id="hearts"></div>
 
 <div class="app-container" id="mainApp">
@@ -374,7 +408,7 @@ button:active { transform: scale(0.98); }
       <input type="text" id="rUser" placeholder="Username (@example)" autocomplete="off" autocorrect="off" spellcheck="false">
       <input type="email" id="rEmail" placeholder="Email address (Optional)" autocomplete="off" autocorrect="off" spellcheck="false">
       <input type="password" id="rPass" placeholder="Password (Minimum 4 chars)" autocomplete="off" autocorrect="off" spellcheck="false">
-      <button onclick="registerUser()">Create Account (Free Quota 1-500)</button>
+      <button onclick="registerUser()">Create Account (1 Device Block)</button>
     </div>
 
     <div id="logForm" class="hidden">
@@ -427,7 +461,7 @@ button:active { transform: scale(0.98); }
 
     <!-- VIP PAYMENTS SECTION -->
     <div id="secPay" class="box-section hidden">
-      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>ONLY BTC & ETH (Real Anti-Scam Payments):</b></p>
+      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>ONLY BTC & ETH (Direct Email Verification):</b></p>
       <div style="font-size:11px;">Real BTC:</div>
       <div class="wallet-box">${BTC_WALLET}</div>
       <div style="font-size:11px;">Real ETH:</div>
@@ -438,10 +472,11 @@ button:active { transform: scale(0.98); }
         <option value="VIP">$16.99 = 8M BEST VIP</option>
         <option value="ONE_TIME">$28.99 = 12M ONE TIME</option>
       </select>
-      <input type="text" id="txIdInput" placeholder="Paste your Blockchain TxID" autocomplete="off" autocorrect="off" spellcheck="false">
-      <button onclick="verifyPayment()" style="font-size:12px; margin-bottom:8px;">Verify TxID & Get Hidden Code</button>
       
-      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.4); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Hidden Code: None generated</div>
+      <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Get Code & Instructions</button>
+      
+      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.4); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate code and send payment screenshot to po80payments@gmail.com</div>
+      
       <input type="text" id="redeemInput" placeholder="Redeem Code SEXCITES-XXXX" autocomplete="off" autocorrect="off" spellcheck="false">
       <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Redeem VIP Months</button>
     </div>
@@ -453,7 +488,6 @@ button:active { transform: scale(0.98); }
 const socket = io();
 let currentUser = null;
 
-// Soft dynamic hearts background
 function createHeart() {
   const container = document.getElementById('hearts');
   if(!container) return;
@@ -536,7 +570,6 @@ function initUserSession(user) {
   loadPosts();
 }
 
-// Socket Event Listeners for 0.1s Real-Time
 socket.on('friend:request-received', (data) => {
   const box = document.getElementById('inboxList');
   document.getElementById('noReq').style.display = 'none';
@@ -603,17 +636,16 @@ function renderSinglePost(p) {
   feed.prepend(div);
 }
 
-async function verifyPayment() {
-  const txid = document.getElementById('txIdInput').value;
+async function requestPaymentCode() {
   const planType = document.getElementById('selectPlan').value;
-  const res = await fetch('/api/pay-verify', {
+  const res = await fetch('/api/pay-request', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ userId: currentUser.id, txid, planType })
+    body: JSON.stringify({ userId: currentUser.id, planType })
   });
   const data = await res.json();
   if(data.success) {
-    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Generated Hidden Code:</b> ' + data.hiddenCode;
+    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Code: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Send screenshot to <a href="mailto:' + data.adminEmail + '" style="color:#38bdf8;">' + data.adminEmail + '</a>. If delayed, +4 extra months free added!</span>';
   } else {
     alert(data.error);
   }

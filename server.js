@@ -6,35 +6,34 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // ==========================================
-// MEMORY STORAGE (High-speed Maps)
+// REAL MEMORY DATABASE (Fully Operational)
 // ==========================================
-const users = new Map();          // id -> userObj
-const usersByName = new Map();    // username -> id
+const users = new Map();          // userId -> userObj
+const usersByName = new Map();    // username -> userId
 const friends = new Map();        // userId -> Set(friendIds)
 const friendRequests = new Map(); // userId -> Map(senderId -> requestObj)
 const messages = new Map();       // chatId -> [ {senderId, text, type, timestamp} ]
 const posts = [];                 // [ {id, author, text, image, timestamp, likes: [], comments: []} ]
 const userCodes = new Map();      // userId -> [ {code, plan, months, used} ]
 
-let totalRegisteredCount = 0;     // Counter for 0 to 500 promo system
+let totalRegisteredCount = 0;     // Real counter for 0 to 500 promo system
 
 const BTC_WALLET = "bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s";
 const ETH_WALLET = "0x4ABCf532fed9D9CFD0d3C4654cDFB56D02cFF21c";
-const ADMIN_CONTACT = "Administrator Support";
 
 function getChatId(id1, id2) {
   return id1 < id2 ? id1 + '_' + id2 : id2 + '_' + id1;
 }
 
 // ==========================================
-// REST API ENDPOINTS
+// REST API ENDPOINTS (Real Logic)
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V20.0 LIVE & FULLY OPERATIONAL');
+  res.status(200).send('SEXCITES.COM V20.0 REAL SYSTEM LIVE');
 });
 
 app.post('/api/register', (req, res) => {
@@ -228,7 +227,7 @@ app.get('/api/posts', (req, res) => {
 });
 
 // ==========================================
-// SOCKET.IO — REAL-TIME 24/7
+// SOCKET.IO — REAL-TIME 24/7 COMMUNICATION
 // ==========================================
 io.on('connection', (socket) => {
   let currentUserId = null;
@@ -311,7 +310,9 @@ io.on('connection', (socket) => {
   });
 });
 
-// Front-End Interface
+// ==========================================
+// FRONT-END USER INTERFACE (English & Fully Active)
+// ==========================================
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -906,6 +907,7 @@ async function toggleLike(postId) {
   if(data.success) {
     const btn = document.getElementById('like_btn_' + postId);
     if(data.liked) {
+      btn.style.styleFloat = '';
       btn.style.color = '#ff2a6d';
     } else {
       btn.style.color = '#cbd5e1';

@@ -8,8 +8,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+// Ampliar límite para permitir imágenes pesadas desde dispositivos móviles o PC
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 const DB_FILE = path.join(__dirname, 'database.json');
 
@@ -49,7 +50,7 @@ function getClientIP(req) {
 }
 
 // ==========================================
-// SISTEMA ANTI-HACKER Y DEFENSA DE REGISTRO
+// SISTEMA DE SEGURIDAD FLEXIBLE Y SIN BLOQUEOS
 // ==========================================
 const securityWatchdog = {};
 
@@ -63,27 +64,27 @@ function checkAntiHacker(req, res, actionType) {
 
   const record = securityWatchdog[ip];
 
+  if (now - record.lastAction > 30000) {
+    record.attempts = 0;
+    record.blockUntil = 0;
+  }
+
   if (record.blockUntil > now) {
     const remainingSecs = Math.ceil((record.blockUntil - now) / 1000);
     return { 
       blocked: true, 
-      error: `🚨 ACCESO BLOQUEADO POR SEGURIDAD. Movimiento sospechoso detectado. Reintenta en ${remainingSecs}s.` 
+      error: `⚠️ Demasiados intentos rápidos. Por favor, espera ${remainingSecs} segundos antes de volver a intentar.` 
     };
-  }
-
-  if (now - record.lastAction > 60000) {
-    record.attempts = 0;
   }
 
   record.lastAction = now;
   record.attempts++;
 
-  if (record.attempts > 8) {
-    record.blockUntil = now + (15 * 60 * 1000);
-    saveDB();
+  if (record.attempts > 40) {
+    record.blockUntil = now + (2 * 60 * 1000);
     return { 
       blocked: true, 
-      error: '🚨 ALERTA: Actividad anómala detectada. Tu dirección IP ha sido bloqueada temporalmente por 15 minutos.' 
+      error: '⚠️ Límite temporal de seguridad alcanzado. Espera 2 minutos para continuar.' 
     };
   }
 
@@ -91,7 +92,7 @@ function checkAntiHacker(req, res, actionType) {
 }
 
 // ==========================================
-// API DE REGISTRO CON BLOQUEO A PARTIR DE 500
+// API: REGISTRO, LOGIN Y ACTUALIZACIÓN DE PERFIL
 // ==========================================
 app.post('/api/register', (req, res) => {
   const securityCheck = checkAntiHacker(req, res, 'register');
@@ -103,30 +104,25 @@ app.post('/api/register', (req, res) => {
   const clientIP = getClientIP(req);
 
   if (!username || username.trim().length < 3 || !password || password.trim().length < 4) {
-    return res.json({ success: false, error: 'El usuario (min. 3) y contraseña (min. 4) son obligatorios.' });
+    return res.json({ success: false, error: 'El usuario (min. 3 caracteres) y contraseña (min. 4 caracteres) son obligatorios.' });
   }
 
   const cleanUser = username.trim().toLowerCase().replace('@', '');
   if (db.users[cleanUser]) {
-    return res.json({ success: false, error: 'Este nombre de usuario ya está registrado.' });
+    return res.json({ success: false, error: 'Este nombre de usuario ya está registrado. Elige otro o inicia sesión.' });
   }
 
   const totalUsers = Object.keys(db.users).length;
   let subscriptionStatus = '';
   let expiresAt = 0;
 
-  // LÓGICA ESTRICTA DE BLOQUEO Y CUPOS (MÁXIMO 500 GRATIS)
   if (totalUsers < 500) {
-    if (db.ips[clientIP]) {
-      return res.json({ success: false, error: 'Bloqueo: Ya se registró una cuenta gratuita desde esta red o IP.' });
-    }
     subscriptionStatus = 'free_launch_2m';
-    expiresAt = Date.now() + (60 * 24 * 60 * 60 * 1000); // 2 meses gratis
+    expiresAt = Date.now() + (60 * 24 * 60 * 60 * 1000);
     db.ips[clientIP] = cleanUser;
   } else {
-    // BLOQUEO OBLIGATORIO: EXIGE PAGO SI YA PASÓ DE 500
     if (plan !== '6m' && plan !== '12m') {
-      return res.json({ success: false, error: '⚠️ Límite de 500 cuentas superado. Se requiere realizar el pago institucional en Bitcoin para ingresar.' });
+      return res.json({ success: false, error: '⚠️ Límite de 500 cuentas superado. Se requiere seleccionar un plan de pago en Bitcoin.' });
     }
     subscriptionStatus = plan === '6m' ? 'pending_paid_6m' : 'pending_paid_12m';
     const days = plan === '6m' ? 180 : 365;
@@ -161,24 +157,60 @@ app.post('/api/login', (req, res) => {
   }
 
   const { username, password } = req.body;
-  const cleanUser = (username || '').trim().toLowerCase().replace('@', '');
+  if (!username || !password) {
+    return res.json({ success: false, error: 'Introduce tu usuario y contraseña para continuar.' });
+  }
+
+  const cleanUser = username.trim().toLowerCase().replace('@', '');
   const user = db.users[cleanUser];
 
   if (!user || user.password !== password) {
-    return res.json({ success: false, error: 'Credenciales inválidas o el usuario no existe.' });
+    return res.json({ success: false, error: 'Credenciales incorrectas. Verifica tu usuario y contraseña.' });
   }
 
   res.json({ success: true, user });
 });
 
+// NUEVO ENDPOINT: ACTUALIZAR PERFIL EN TIEMPO REAL
+app.post('/api/update-profile', (req, res) => {
+  const { username, avatar, bio } = req.body;
+  const cleanUser = (username || '').trim().toLowerCase().replace('@', '');
+
+  if (!db.users[cleanUser]) {
+    return res.json({ success: false, error: 'Usuario no encontrado.' });
+  }
+
+  if (avatar) {
+    db.users[cleanUser].avatar = avatar;
+  }
+  if (bio !== undefined) {
+    db.users[cleanUser].bio = bio.trim();
+  }
+
+  saveDB();
+
+  // Notificar a todos los clientes conectados sobre el cambio de perfil
+  io.emit('profile:updated', { 
+    username: cleanUser, 
+    avatar: db.users[cleanUser].avatar, 
+    bio: db.users[cleanUser].bio 
+  });
+
+  res.json({ success: true, user: db.users[cleanUser] });
+});
+
 app.get('/api/init-data', (req, res) => {
   const currentUsername = (req.query.username || '').toLowerCase();
   
-  const formattedPosts = db.posts.map(p => ({
-    ...p,
-    likesCount: (p.likes || []).length,
-    userHasLiked: (p.likes || []).includes(currentUsername)
-  }));
+  const formattedPosts = db.posts.map(p => {
+    const authorData = db.users[p.author];
+    return {
+      ...p,
+      authorAvatar: authorData ? authorData.avatar : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+      likesCount: (p.likes || []).length,
+      userHasLiked: (p.likes || []).includes(currentUsername)
+    };
+  });
 
   const discoveryUsers = Object.keys(db.users)
     .filter(u => u !== currentUsername)
@@ -219,7 +251,7 @@ app.get('/api/init-data', (req, res) => {
 });
 
 // ==========================================
-// WEBSOCKETS PARA CONEXIONES Y CHAT EN VIVO
+// WEBSOCKETS EN TIEMPO REAL
 // ==========================================
 io.on('connection', (socket) => {
   socket.on('join', (username) => {
@@ -234,6 +266,8 @@ io.on('connection', (socket) => {
     const { author, text, image } = data;
     if (!text && !image) return;
 
+    const authorData = db.users[author];
+
     const newPost = {
       id: 'post_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       author,
@@ -247,7 +281,12 @@ io.on('connection', (socket) => {
     db.posts.unshift(newPost);
     saveDB();
 
-    io.emit('post:new', { ...newPost, likesCount: 0, userHasLiked: false });
+    io.emit('post:new', { 
+      ...newPost, 
+      authorAvatar: authorData ? authorData.avatar : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+      likesCount: 0, 
+      userHasLiked: false 
+    });
   });
 
   socket.on('post:like', (data) => {
@@ -297,7 +336,7 @@ io.on('connection', (socket) => {
     const cleanPeer = (user2 || '').trim().toLowerCase().replace('@', '');
     
     if (!db.users[cleanPeer]) {
-      socket.emit('error-msg', { message: 'El usuario no existe.' });
+      socket.emit('error-msg', { message: 'El usuario seleccionado no existe.' });
       return;
     }
 
@@ -328,7 +367,7 @@ io.on('connection', (socket) => {
 });
 
 // ==========================================
-// FRONT-END INTEGRADO CON SISTEMA DE MATCH Y PAGO BTC
+// INTERFAZ FRONT-END CON GESTIÓN DE PERFIL EN TIEMPO REAL
 // ==========================================
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -366,7 +405,7 @@ canvas#bgCanvas {
 .container { 
   width: 100%; 
   max-width: 760px; 
-  background: rgba(12, 6, 20, 0.88); 
+  background: rgba(12, 6, 20, 0.92); 
   border: 1px solid rgba(255, 42, 109, 0.4); 
   border-radius: 24px; 
   padding: 24px; 
@@ -431,7 +470,7 @@ button:hover { opacity: 0.9; }
 .plan-opt { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 8px; cursor: pointer; color: #fff; }
 .hidden { display: none !important; }
 
-/* PASARELA DE PAGO BITCOIN */
+/* PASARELA BITCOIN */
 .btc-modal {
   background: rgba(5, 217, 232, 0.05);
   border: 1px solid #05d9e8;
@@ -442,15 +481,16 @@ button:hover { opacity: 0.9; }
   margin-bottom: 12px;
 }
 .btc-address-box {
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
   border: 1px dashed #05d9e8;
-  padding: 10px;
+  padding: 12px;
   border-radius: 8px;
   font-family: monospace;
-  font-size: 11px;
+  font-size: 12px;
   color: #05d9e8;
   word-break: break-all;
   margin: 10px 0;
+  user-select: all;
 }
 
 /* NAVEGACIÓN DOCK */
@@ -470,8 +510,8 @@ button:hover { opacity: 0.9; }
 .os-dock span { cursor: pointer; padding: 8px 12px; border-radius: 8px; transition: 0.2s; color: #cbd5e1; }
 .os-dock span:hover, .os-dock span.active { background: rgba(255,42,109,0.25); color: #05d9e8; }
 .action-btns-header { display: flex; gap: 6px; }
-.refresh-btn { background: rgba(5, 217, 232, 0.2); color: #05d9e8; border: 1px solid rgba(5, 217, 232, 0.4); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700; width: auto !important; }
-.logout-btn { background: rgba(255, 42, 109, 0.2); color: #ff2a6d; border: 1px solid rgba(255, 42, 109, 0.4); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700; width: auto !important; }
+.profile-btn { background: rgba(5, 217, 232, 0.2); color: #05d9e8; border: 1px solid rgba(5, 217, 232, 0.4); padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700; width: auto !important; }
+.logout-btn { background: rgba(255, 42, 109, 0.2); color: #ff2a6d; border: 1px solid rgba(255, 42, 109, 0.4); padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700; width: auto !important; }
 
 .space-section { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 16px; }
 
@@ -504,11 +544,11 @@ button:hover { opacity: 0.9; }
 
 <div class="container">
   <h1>SEXCITES.COM</h1>
-  <div class="counter-banner" id="counterBanner">🛡️ Verificando cupos del sistema...</div>
+  <div class="counter-banner" id="counterBanner">🛡️ Conectando con el sistema...</div>
 
   <!-- SECCIÓN DE REGISTRO -->
   <div id="authSection">
-    <div style="font-size: 13px; font-weight: 700; color: #ff2a6d; margin-bottom: 10px;">✨ Registro de Cuenta (Sube tu Foto o Avatar)</div>
+    <div style="font-size: 13px; font-weight: 700; color: #ff2a6d; margin-bottom: 10px;">✨ Registro de Cuenta (Sube cualquier foto de tu dispositivo)</div>
     <input type="text" id="regUser" placeholder="Nombre de usuario (ej. alex)" autocomplete="off">
     <input type="password" id="regPass" placeholder="Contraseña segura" autocomplete="off">
     
@@ -522,79 +562,98 @@ button:hover { opacity: 0.9; }
       </div>
     </div>
 
-    <textarea id="regBio" placeholder="Escribe algo sobre ti para que te encuentren más fácil..." style="height: 60px; font-size: 12px;"></textarea>
+    <textarea id="regBio" placeholder="Escribe algo sobre ti..." style="height: 60px; font-size: 12px;"></textarea>
 
-    <!-- BLOQUE DE PLANES (SE ACTIVA AUTOMÁTICAMENTE AL SUPERAR LOS 500 REGISTROS) -->
     <div id="plansContainer" class="plans-box">
-      <div style="font-size: 12px; color: #ff2a6d; font-weight: 700; margin-bottom: 6px;">⚠️ Límite de 500 cuentas gratis alcanzado. Selecciona tu plan de pago para ingresar:</div>
-      <label class="plan-opt"><input type="radio" name="launchPlan" value="6m" checked> Plan 6 Meses — <b>$15.99 USD (Equivalente en BTC)</b></label>
-      <label class="plan-opt"><input type="radio" name="launchPlan" value="12m"> Plan 12 Meses — <b>$28.99 USD (Equivalente en BTC)</b></label>
+      <div style="font-size: 12px; color: #ff2a6d; font-weight: 700; margin-bottom: 6px;">⚠️ Límite de 500 cuentas gratis alcanzado. Selecciona tu plan institucional:</div>
+      <label class="plan-opt"><input type="radio" name="launchPlan" value="6m" checked> Plan 6 Meses — <b>$15.99 USD en BTC</b></label>
+      <label class="plan-opt"><input type="radio" name="launchPlan" value="12m"> Plan 12 Meses — <b>$28.99 USD en BTC</b></label>
     </div>
 
-    <button onclick="registerUser()" style="margin-top: 6px;">Registrarse en la Plataforma</button>
-    <div style="text-align: center; font-size: 11px; color: #94a3b8; margin-top: 12px; cursor: pointer;" onclick="toggleAuthMode()">¿Ya tienes cuenta? Inicia Sesión</div>
+    <button onclick="registerUser()" style="margin-top: 6px;">Registrarse Ahora</button>
+    <div style="text-align: center; font-size: 11px; color: #94a3b8; margin-top: 12px; cursor: pointer;" onclick="toggleAuthMode('login')">¿Ya tienes cuenta? Inicia Sesión</div>
   </div>
 
-  <!-- PASARELA DE PAGO BITCOIN (BLOQUEO DE INGRESO SI SUPERA 500) -->
+  <!-- PASARELA BITCOIN -->
   <div id="btcModalSection" class="hidden">
     <div class="btc-modal">
-      <div style="font-size: 14px; font-weight: 700; color: #05d9e8; margin-bottom: 6px;">⚡ ACCESO BLOQUEADO — PAGO REQUERIDO EN BITCOIN (BTC)</div>
+      <div style="font-size: 14px; font-weight: 700; color: #05d9e8; margin-bottom: 6px;">⚡ ACCESO REQUERIDO — PAGO EN BITCOIN (BTC)</div>
       <div style="font-size: 11px; color: #cbd5e1; margin-bottom: 8px; line-height: 1.4;">
-        Para desbloquear tu acceso y formar parte de la comunidad, transfiere el equivalente al plan a nuestra dirección oficial:
+        Transfiere el equivalente en Bitcoin a nuestra dirección oficial de pagos:
       </div>
       <div class="btc-address-box">bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s</div>
       <div style="font-size: 11px; color: #ff2a6d; font-weight: 600; margin-bottom: 10px; line-height: 1.4;">
-        ⚠️ OBLIGATORIO: Envía el comprobante de pago y tu nombre de usuario al correo <b style="color:#fff;">po80payments@gmail.com</b> para verificar tu membresía de inmediato.
+        ⚠️ Envía el comprobante y tu usuario a <b style="color:#fff;">po80payments@gmail.com</b> para validar tu acceso.
       </div>
-      <button onclick="finishBtcFlow()" style="background: linear-gradient(135deg, #05d9e8, #7928ca); font-size: 12px; padding: 8px;">Ya envié mi comprobante / Entendido</button>
+      <button onclick="finishBtcFlow()" style="background: linear-gradient(135deg, #05d9e8, #7928ca); font-size: 12px; padding: 8px;">Ya envié mi comprobante / Entrar</button>
     </div>
   </div>
 
+  <!-- SECCIÓN DE LOGIN -->
   <div id="loginSection" class="hidden">
     <div style="font-size: 13px; font-weight: 700; color: #05d9e8; margin-bottom: 10px;">🔐 Iniciar Sesión</div>
     <input type="text" id="logUser" placeholder="Usuario" autocomplete="off">
     <input type="password" id="logPass" placeholder="Contraseña" autocomplete="off">
-    <button onclick="loginUser()">Entrar</button>
-    <div style="text-align: center; font-size: 11px; color: #94a3b8; margin-top: 12px; cursor: pointer;" onclick="toggleAuthMode()">¿No tienes cuenta? Regístrate</div>
+    <button onclick="loginUser()">Entrar al Sistema</button>
+    <div style="text-align: center; font-size: 11px; color: #94a3b8; margin-top: 12px; cursor: pointer;" onclick="toggleAuthMode('register')">¿No tienes cuenta? Regístrate</div>
   </div>
 
   <div id="authAlert" style="color: #f87171; font-size: 12px; text-align: center; margin-top: 8px; font-weight: 600; line-height: 1.4;"></div>
 
-  <!-- PANEL PRINCIPAL DEL SISTEMA DE CONEXIONES -->
+  <!-- PANEL PRINCIPAL -->
   <div id="appSection" class="hidden">
     <div class="os-dock">
       <div class="os-nav-items">
         <span id="navWall" class="active" onclick="switchSpace('wall')">🌐 Muro</span>
-        <span id="navMatch" onclick="switchSpace('match')">🔥 Conocer Gente (Match)</span>
+        <span id="navMatch" onclick="switchSpace('match')">🔥 Match</span>
         <span id="navChat" onclick="switchSpace('chat')">💬 Chats</span>
       </div>
       <div class="action-btns-header">
-        <button class="refresh-btn" onclick="refreshData()">🔄 Actualizar</button>
+        <button class="profile-btn" onclick="openProfileModal()">⚙️ Mi Perfil</button>
         <button class="logout-btn" onclick="logoutUser()">Salir</button>
       </div>
     </div>
 
-    <!-- SECCIÓN 1: MURO SOCIAL -->
+    <!-- MODAL DE CONFIGURACIÓN DE PERFIL (FOTO Y DESCRIPCIÓN EN TIEMPO REAL) -->
+    <div id="profileSettingsBox" class="space-section hidden" style="margin-bottom: 16px; border: 1px solid #05d9e8;">
+      <div style="font-size: 14px; font-weight: 700; color: #05d9e8; margin-bottom: 10px;">⚙️ Editar tu Perfil en Tiempo Real</div>
+      <div style="display: flex; gap: 14px; align-items: center; margin-bottom: 12px;">
+        <img id="editProfileAvatarPreview" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 2px solid #ff2a6d;">
+        <div>
+          <input type="file" id="editAvatarFile" accept="image/*" style="display: none;" onchange="handleEditAvatarPreview(event)">
+          <button type="button" onclick="document.getElementById('editAvatarFile').click()" style="width: auto; background: rgba(5,217,232,0.15); border: 1px solid rgba(5,217,232,0.4); color: #05d9e8; font-size: 11px; padding: 6px 12px;">📷 Cambiar Foto</button>
+          <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Sube cualquier imagen de tu equipo</div>
+        </div>
+      </div>
+      <label style="font-size: 11px; color: #cbd5e1; display: block; margin-bottom: 4px;">Tu Descripción / Biografía:</label>
+      <textarea id="editProfileBio" style="height: 60px; font-size: 12px; margin-bottom: 8px;"></textarea>
+      <div style="display: flex; gap: 8px;">
+        <button onclick="saveProfileChanges()" style="font-size: 12px; padding: 8px;">Guardar Cambios</button>
+        <button onclick="closeProfileModal()" style="background: rgba(255,255,255,0.1); font-size: 12px; padding: 8px;">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 1: MURO -->
     <div id="spaceWall" class="space-section">
       <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); padding: 14px; border-radius: 14px; margin-bottom: 16px;">
         <textarea id="postText" placeholder="Comparte algo con la comunidad..." style="height: 70px; font-size: 13px; margin-bottom: 8px;"></textarea>
         <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px;">
           <input type="file" id="postImageFile" accept="image/*" style="display: none;" onchange="handleImagePreview(event)">
-          <button type="button" onclick="document.getElementById('postImageFile').click()" style="width: auto; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); font-size: 11px; padding: 6px 12px;">📷 Foto</button>
+          <button type="button" onclick="document.getElementById('postImageFile').click()" style="width: auto; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); font-size: 11px; padding: 6px 12px;">📷 Adjuntar Foto</button>
           <span id="imgFileName" style="font-size: 11px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Sin archivo</span>
         </div>
         <div id="imagePreviewContainer" class="hidden" style="position: relative; margin-bottom: 10px;">
           <img id="imagePreviewElement" style="max-height: 140px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-          <button onclick="clearImageSelection()" style="width: auto; padding: 4px 8px; font-size: 10px; background: #ff2a6d; margin-top: 6px;">Quitar</button>
+          <button onclick="clearImageSelection()" style="width: auto; padding: 4px 8px; font-size: 10px; background: #ff2a6d; margin-top: 6px;">Quitar Foto</button>
         </div>
-        <button onclick="createPost()" style="font-size: 12px; padding: 8px;">Publicar</button>
+        <button onclick="createPost()" style="font-size: 12px; padding: 8px;">Publicar en el Muro</button>
       </div>
       <div id="wallFeed" style="display: flex; flex-direction: column; gap: 12px; max-height: 440px; overflow-y: auto; padding-right: 4px;"></div>
     </div>
 
-    <!-- SECCIÓN 2: DESCUBRIR Y CONOCER GENTE (MATCH) -->
+    <!-- SECCIÓN 2: MATCH -->
     <div id="spaceMatch" class="space-section hidden">
-      <div style="font-size: 15px; font-weight: 700; color: #ff2a6d; margin-bottom: 14px; text-align: center;">🔥 Descubre y Conoce Personas Nuevas</div>
+      <div style="font-size: 15px; font-weight: 700; color: #ff2a6d; margin-bottom: 14px; text-align: center;">🔥 Conoce Personas Nuevas</div>
       <div class="match-card-box">
         <img id="matchAvatar" class="profile-discovery-img" src="" alt="Avatar">
         <div id="matchUsername" style="font-size: 20px; font-weight: 700; color: #05d9e8; margin-bottom: 6px;">Cargando...</div>
@@ -606,7 +665,7 @@ button:hover { opacity: 0.9; }
       </div>
     </div>
 
-    <!-- SECCIÓN 3: CHAT PRIVADO EN VIVO -->
+    <!-- SECCIÓN 3: CHAT -->
     <div id="spaceChat" class="space-section hidden">
       <div class="chat-layout">
         <div class="chats-sidebar">
@@ -620,7 +679,7 @@ button:hover { opacity: 0.9; }
             Selecciona un chat
           </div>
           <div id="chatBox" class="chat-messages-box">
-            <div style="color: #64748b; text-align: center; margin: auto;">Tus mensajes aparecerán aquí al instante.</div>
+            <div style="color: #64748b; text-align: center; margin: auto;">Tus mensajes aparecerán aquí.</div>
           </div>
           <div style="display: flex; gap: 6px; margin-top: 6px;">
             <input type="text" id="msgInput" placeholder="Escribe un mensaje..." style="margin:0; font-size: 12px;" autocomplete="off" onkeypress="handleChatKeypress(event)">
@@ -633,11 +692,11 @@ button:hover { opacity: 0.9; }
 </div>
 
 <script>
-// MOTOR DE ANIMACIÓN VISUAL DE FONDO
+// ANIMACIÓN DE FONDO
 const canvas = document.getElementById('bgCanvas');
 const ctx = canvas.getContext('2d');
 let elements = [];
-const totalElements = 50;
+const totalElements = 40;
 
 function resizeCanvas() {
   canvas.width = window.innerWidth;
@@ -650,10 +709,10 @@ for (let i = 0; i < totalElements; i++) {
   elements.push({
     x: Math.random() * canvas.width,
     y: Math.random() * canvas.height,
-    size: Math.random() * 14 + 8,
-    speedY: (Math.random() * 0.8 + 0.2) * -1,
-    speedX: (Math.random() - 0.5) * 0.5,
-    opacity: Math.random() * 0.6 + 0.2,
+    size: Math.random() * 12 + 6,
+    speedY: (Math.random() * 0.7 + 0.2) * -1,
+    speedX: (Math.random() - 0.5) * 0.4,
+    opacity: Math.random() * 0.5 + 0.2,
     color: Math.random() > 0.4 ? '#ff2a6d' : '#05d9e8',
     isHeart: Math.random() > 0.5,
     pulse: Math.random() * 0.03 + 0.01,
@@ -663,7 +722,6 @@ for (let i = 0; i < totalElements; i++) {
 
 function animateBackground() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
   elements.forEach(el => {
     el.y += el.speedY;
     el.x += el.speedX;
@@ -678,7 +736,7 @@ function animateBackground() {
     if (el.x > canvas.width + 30) el.x = -30;
 
     ctx.save();
-    ctx.shadowBlur = 15;
+    ctx.shadowBlur = 12;
     ctx.shadowColor = el.color;
     ctx.globalAlpha = el.opacity;
 
@@ -694,17 +752,15 @@ function animateBackground() {
     }
     ctx.restore();
   });
-
   requestAnimationFrame(animateBackground);
 }
-
 requestAnimationFrame(animateBackground);
 
-// INTERACCIÓN Y SOCKETS
 const socket = io();
 let currentUser = null;
 let currentChatPeer = null;
 let base64Avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
+let editAvatarBase64 = null;
 let base64Image = null;
 let discoveryList = [];
 let currentDiscoveryIndex = 0;
@@ -717,24 +773,43 @@ socket.on('stats:update', (data) => {
   updateCounterBanner(data.totalUsers);
 });
 
+// ESCUCHADOR EN TIEMPO REAL DE ACTUALIZACIONES DE PERFIL
+socket.on('profile:updated', (data) => {
+  if (currentUser && data.username === currentUser.username) {
+    currentUser.avatar = data.avatar;
+    currentUser.bio = data.bio;
+  }
+  refreshData();
+});
+
 function updateCounterBanner(total) {
   const banner = document.getElementById('counterBanner');
   const plansContainer = document.getElementById('plansContainer');
   
   if (total < 500) {
-    banner.innerHTML = '🎉 <b>Promoción de Lanzamiento:</b> Quedan <b>' + (500 - total) + '</b> cuentas gratis disponibles.';
+    banner.innerHTML = '🎉 <b>Promoción de Lanzamiento:</b> Usuario registrado <b>#' + (total + 1) + '</b> de 500 (¡Quedan <b>' + (500 - total) + '</b> cuentas gratis!).';
     plansContainer.classList.add('hidden');
   } else {
-    banner.innerHTML = '⚠️ <b>Cupo de 500 cuentas lleno.</b> El registro requiere pago obligatorio en Bitcoin.';
+    banner.innerHTML = '⚠️ <b>Cupo de 500 cuentas gratis lleno (' + total + '/500).</b> El registro requiere pago en Bitcoin.';
     plansContainer.classList.remove('hidden');
   }
 }
 
-function toggleAuthMode() {
-  document.getElementById('authSection').classList.toggle('hidden');
-  document.getElementById('loginSection').classList.toggle('hidden');
-  document.getElementById('btcModalSection').classList.add('hidden');
+function toggleAuthMode(mode) {
+  const authSec = document.getElementById('authSection');
+  const loginSec = document.getElementById('loginSection');
+  const btcSec = document.getElementById('btcModalSection');
+  
+  authSec.classList.add('hidden');
+  loginSec.classList.add('hidden');
+  btcSec.classList.add('hidden');
   document.getElementById('authAlert').innerText = '';
+
+  if (mode === 'login') {
+    loginSec.classList.remove('hidden');
+  } else {
+    authSec.classList.remove('hidden');
+  }
 }
 
 function switchSpace(space) {
@@ -749,6 +824,7 @@ function switchSpace(space) {
   if (space === 'chat') refreshData();
 }
 
+// CONTROL DE FOTO DE REGISTRO
 function handleRegAvatarPreview(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -761,6 +837,58 @@ function handleRegAvatarPreview(event) {
     document.getElementById('regAvatarPreviewContainer').classList.remove('hidden');
   };
   reader.readAsDataURL(file);
+}
+
+// CONTROL DE FOTO DESDE EL PANEL DE CONFIGURACIÓN DE PERFIL
+function openProfileModal() {
+  const box = document.getElementById('profileSettingsBox');
+  box.classList.remove('hidden');
+  document.getElementById('editProfileBio').value = currentUser.bio || '';
+  document.getElementById('editProfileAvatarPreview').src = currentUser.avatar;
+  editAvatarBase64 = null;
+}
+
+function closeProfileModal() {
+  document.getElementById('profileSettingsBox').classList.add('hidden');
+}
+
+function handleEditAvatarPreview(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    editAvatarBase64 = e.target.result;
+    document.getElementById('editProfileAvatarPreview').src = editAvatarBase64;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveProfileChanges() {
+  const newBio = document.getElementById('editProfileBio').value;
+  const payload = {
+    username: currentUser.username,
+    bio: newBio,
+    avatar: editAvatarBase64 ? editAvatarBase64 : currentUser.avatar
+  };
+
+  try {
+    const res = await fetch('/api/update-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentUser = data.user;
+      closeProfileModal();
+      refreshData();
+      alert('✅ ¡Perfil actualizado correctamente en tiempo real!');
+    } else {
+      alert(data.error);
+    }
+  } catch(err) {
+    alert('Error al conectar con el servidor.');
+  }
 }
 
 async function registerUser() {
@@ -797,7 +925,7 @@ function finishBtcFlow() {
   if (window.pendingUserSession) {
     bootOS(window.pendingUserSession);
   } else {
-    toggleAuthMode();
+    toggleAuthMode('login');
   }
 }
 
@@ -828,9 +956,11 @@ function logoutUser() {
   document.getElementById('appSection').classList.add('hidden');
   document.getElementById('authSection').classList.remove('hidden');
   document.getElementById('btcModalSection').classList.add('hidden');
+  document.getElementById('loginSection').classList.add('hidden');
   document.getElementById('counterBanner').classList.remove('hidden');
   document.getElementById('logUser').value = '';
   document.getElementById('logPass').value = '';
+  fetch('/api/init-data').then(res => res.json()).then(data => updateCounterBanner(data.totalUsers));
 }
 
 function bootOS(user) {
@@ -881,7 +1011,7 @@ function clearImageSelection() {
 
 function createPost() {
   const text = document.getElementById('postText').value;
-  if (!text && !base64Image) return alert('Escribe texto o adjunta una foto.');
+  if (!text && !base64Image) return alert('Escribe un texto o adjunta una foto.');
   socket.emit('post:create', { author: currentUser.username, text, image: base64Image });
   document.getElementById('postText').value = '';
   clearImageSelection();
@@ -911,7 +1041,7 @@ function appendPostToDOM(p, prepend = false) {
   commentsHtml += '</div>';
 
   div.innerHTML = '<div class="post-header">' +
-                     '<img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" class="post-avatar">' +
+                     '<img src="' + (p.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100') + '" class="post-avatar">' +
                      '<div>' +
                        '<b style="color:#ff2a6d; font-size:13px;">@' + p.author + '</b>' +
                        '<div style="font-size:10px; color:#94a3b8;">Hace un momento</div>' +
@@ -965,7 +1095,7 @@ function loadNextMatchProfile() {
   if (discoveryList.length === 0) {
     nameEl.innerText = 'No hay más perfiles';
     avatarEl.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
-    bioEl.innerText = 'Vuelve más tarde para conocer nuevos usuarios.';
+    bioEl.innerText = 'Vuelve más tarde cuando más usuarios se registren.';
     return;
   }
   if (currentDiscoveryIndex >= discoveryList.length) currentDiscoveryIndex = 0;
@@ -1019,7 +1149,7 @@ socket.on('chat:history-loaded', (data) => {
   const box = document.getElementById('chatBox');
   box.innerHTML = '';
   if (data.history.length === 0) {
-    box.innerHTML = '<div style="color:#64748b; text-align:center; margin:auto;">Inicia la conversación con @' + data.peer + '.</div>';
+    box.innerHTML = '<div style="color:#64748b; text-align:center; margin:auto;">Inicia la conversación en tiempo real con @' + data.peer + '.</div>';
     return;
   }
   data.history.forEach(m => appendMsgToDOM(m));
@@ -1068,5 +1198,5 @@ socket.on('error-msg', (data) => { alert(data.message); });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM con sistema de match y bloqueo de pago BTC activo en puerto ' + PORT);
+  console.log('SEXCITES.COM optimizado ejecutándose en el puerto ' + PORT);
 });

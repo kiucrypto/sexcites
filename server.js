@@ -14,11 +14,14 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // ==========================================
 const users = new Map();          // id -> userObj
 const usersByName = new Map();    // username -> id
+const deviceFingerprints = new Map(); // phone/device identifier -> userId (1 account per phone)
 const friends = new Map();        // userId -> Set(friendIds)
 const friendRequests = new Map(); // userId -> Map(senderId -> requestObj)
 const messages = new Map();       // chatId -> [ {senderId, text, type, timestamp} ]
 const posts = [];                 // [ {id, author, text, image, timestamp, likes: [], comments: []} ]
 const userCodes = new Map();      // userId -> [ {code, plan, months, used} ]
+
+let totalRegisteredCount = 0;     // Counter for 0 to 500 promo system
 
 const BTC_WALLET = "bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s";
 const ETH_WALLET = "0x4ABCf532fed9D9CFD0d3C4654cDFB56D02cFF21c";
@@ -37,10 +40,15 @@ app.get('/health', (req, res) => {
 
 app.post('/api/register', (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password, phone } = req.body;
     
     if (!username || username.trim().length < 2 || !password || password.trim().length < 3) {
       return res.json({ success: false, error: 'Please enter a valid username and password.' });
+    }
+
+    const cleanPhone = (phone || '').trim();
+    if (cleanPhone && deviceFingerprints.has(cleanPhone)) {
+      return res.json({ success: false, error: 'Only one account is allowed per phone number/device.' });
     }
 
     const cleanUser = username.trim().toLowerCase().replace('@', '');
@@ -48,23 +56,30 @@ app.post('/api/register', (req, res) => {
       return res.json({ success: false, error: 'This username is already taken. Please choose another.' });
     }
 
+    totalRegisteredCount++;
+    const isFreePromo = totalRegisteredCount <= 500;
+    const initialMonths = isFreePromo ? 2 : 0;
+
     const userId = 'usr_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
     const newUser = {
       id: userId,
       username: cleanUser,
       email: (email || '').trim().toLowerCase(),
       password: password,
-      isFree: true,
-      vipMonths: 2,
+      phone: cleanPhone,
+      isFree: isFreePromo,
+      vipMonths: initialMonths,
+      registrationNumber: totalRegisteredCount,
       createdAt: Date.now()
     };
 
     users.set(userId, newUser);
     usersByName.set(cleanUser, userId);
+    if (cleanPhone) deviceFingerprints.set(cleanPhone, userId);
     friends.set(userId, new Set());
     friendRequests.set(userId, new Map());
 
-    res.json({ success: true, user: newUser });
+    res.json({ success: true, user: newUser, isFreePromo, totalCount: totalRegisteredCount });
   } catch (err) {
     res.json({ success: false, error: 'Server error during registration.' });
   }
@@ -122,7 +137,7 @@ app.post('/api/pay-request', (req, res) => {
     success: true, 
     hiddenCode, 
     adminEmail: ADMIN_EMAIL,
-    message: 'Code generated. Send your payment receipt to ' + ADMIN_EMAIL + ' along with this code.' 
+    message: 'Code generated. Send your payment screenshot to ' + ADMIN_EMAIL + ' along with this code for email activation.' 
   });
 });
 
@@ -330,7 +345,7 @@ app.get('*', (req, res) => {
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
 
 body {
-  background: radial-gradient(circle at center, #1b001a 0%, #0d000f 40%, #000000 100%);
+  background: #030005;
   color: #fff;
   min-height: 100vh;
   display: flex;
@@ -340,32 +355,67 @@ body {
   position: relative;
 }
 
-/* Striking Dynamic Background Glow Effects */
-body::before {
-  content: '';
-  position: absolute;
-  top: -20%;
-  left: -20%;
-  width: 70vw;
-  height: 70vw;
-  background: radial-gradient(circle, rgba(255, 42, 109, 0.25) 0%, transparent 70%);
+/* Striking Dynamic Motion Background with Neon Waves & Glowing Orbs */
+.motion-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   z-index: 0;
-  animation: pulseGlow 8s ease-in-out infinite alternate;
+  pointer-events: none;
+  overflow: hidden;
+  background: linear-gradient(125deg, #090014, #18001e, #020008);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
 }
-body::after {
-  content: '';
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.neon-orb {
   position: absolute;
-  bottom: -20%;
-  right: -20%;
-  width: 70vw;
-  height: 70vw;
-  background: radial-gradient(circle, rgba(5, 217, 232, 0.2) 0%, transparent 70%);
-  z-index: 0;
-  animation: pulseGlow 10s ease-in-out infinite alternate-reverse;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.6;
+  animation: floatOrb 12s ease-in-out infinite alternate;
 }
-@keyframes pulseGlow {
-  0% { transform: scale(1); opacity: 0.7; }
-  100% { transform: scale(1.2); opacity: 1; }
+
+.orb-1 {
+  width: 45vw;
+  height: 45vw;
+  background: rgba(255, 42, 109, 0.4);
+  top: -10%;
+  left: -10%;
+  animation-duration: 10s;
+}
+
+.orb-2 {
+  width: 50vw;
+  height: 50vw;
+  background: rgba(5, 217, 232, 0.35);
+  bottom: -15%;
+  right: -10%;
+  animation-duration: 14s;
+  animation-direction: alternate-reverse;
+}
+
+.orb-3 {
+  width: 35vw;
+  height: 35vw;
+  background: rgba(121, 40, 202, 0.45);
+  top: 30%;
+  left: 35%;
+  animation-duration: 8s;
+}
+
+@keyframes floatOrb {
+  0% { transform: translate(0px, 0px) scale(1); }
+  50% { transform: translate(40px, -50px) scale(1.15); }
+  100% { transform: translate(-30px, 30px) scale(0.9); }
 }
 
 .hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: hidden; }
@@ -420,17 +470,34 @@ body { top: 0 !important; }
 .app-container {
   width: 100%;
   max-width: 480px;
-  background: rgba(15, 12, 22, 0.88);
-  backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid rgba(255, 42, 109, 0.25);
+  background: rgba(15, 10, 25, 0.85);
+  backdrop-filter: blur(30px) saturate(200%);
+  border: 1px solid rgba(255, 42, 109, 0.35);
   border-radius: 24px;
-  box-shadow: 0 30px 80px rgba(0,0,0,0.95), 0 0 30px rgba(255, 42, 109, 0.15);
+  box-shadow: 0 30px 90px rgba(0,0,0,0.95), 0 0 40px rgba(255, 42, 109, 0.2);
   z-index: 10;
   padding: 24px;
   margin: 15px;
 }
 h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; background: linear-gradient(90deg, #ff2a6d, #05d9e8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .subtitle { font-size: 11px; text-align: center; color: #a5b4fc; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px; }
+
+.promo-banner {
+  background: linear-gradient(135deg, rgba(255,42,109,0.2), rgba(5,217,232,0.2));
+  border: 1px solid rgba(255,42,109,0.5);
+  padding: 10px;
+  border-radius: 12px;
+  text-align: center;
+  font-size: 11px;
+  color: #fff;
+  margin-bottom: 12px;
+  font-weight: 600;
+  animation: pulseGlowBox 3s ease-in-out infinite alternate;
+}
+@keyframes pulseGlowBox {
+  0% { box-shadow: 0 0 5px rgba(255,42,109,0.3); }
+  100% { box-shadow: 0 0 15px rgba(5,217,232,0.5); }
+}
 
 .founder-intro-box {
   background: rgba(255, 255, 255, 0.03);
@@ -443,7 +510,6 @@ h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; 
   line-height: 1.4;
 }
 .founder-intro-box h3 { font-size: 12px; color: #ff2a6d; margin-bottom: 4px; font-weight: 700; }
-.founder-intro-box ul { margin: 6px 0 6px 14px; }
 .founder-signature { margin-top: 6px; text-align: right; font-style: italic; color: #05d9e8; font-weight: 600; }
 
 .special-phrase-box {
@@ -495,9 +561,17 @@ button:active { transform: scale(0.98); }
 .box-section { margin-top: 15px; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); }
 .badge-free { background: rgba(34,197,94,0.2); color: #4ade80; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; display: inline-block; margin-bottom: 10px; }
 .wallet-box { font-family: monospace; font-size: 11px; background: rgba(0,0,0,0.55); padding: 8px; border-radius: 8px; margin: 6px 0; word-break: break-all; color: #05d9e8; }
+.switch-link { text-align: center; margin-top: 12px; font-size: 12px; color: #cbd5e1; cursor: pointer; }
+.switch-link span { color: #05d9e8; font-weight: 600; text-decoration: underline; }
 </style>
 </head>
 <body>
+
+<div class="motion-bg">
+  <div class="neon-orb orb-1"></div>
+  <div class="neon-orb orb-2"></div>
+  <div class="neon-orb orb-3"></div>
+</div>
 
 <div class="translate-float">
   <span class="translate-brand">Language</span>
@@ -521,28 +595,35 @@ button:active { transform: scale(0.98); }
   <h1>SEXCITES.COM</h1>
   <div class="subtitle">Private 18+ Community • Real-Time V17.9</div>
 
-  <!-- AUTH VIEW -->
+  <!-- AUTH VIEW (Mandatory Registration First / Sequential Flow) -->
   <div id="authView">
-    <div style="display:flex; gap:10px; margin-bottom:15px;">
-      <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.12)">Register</button>
-      <button onclick="switchTab('log')" id="btnLogTab" style="background:transparent">Sign In</button>
-    </div>
-
-    <!-- REGISTER FORM -->
+    
+    <!-- REGISTER VIEW (Default Obligatory Step 1) -->
     <div id="regForm">
-      <div style="font-size:11px; color:#4ade80; margin-bottom:8px; text-align:center;">🔥 Register quickly and enter the system!</div>
+      <div class="promo-banner">
+        🔥 PROMO (0 - 500): First 2 months completely FREE! Strictly 1 account per phone device.
+      </div>
       <input type="text" id="rUser" placeholder="Username (e.g. your_name)" autocomplete="off">
-      <input type="email" id="rEmail" placeholder="Email (Optional)" autocomplete="off">
+      <input type="email" id="rEmail" placeholder="Email (For activation code & proofs)" autocomplete="off">
+      <input type="tel" id="rPhone" placeholder="Phone Number (1 account limit per phone)" autocomplete="off">
       <input type="password" id="rPass" placeholder="Password (Minimum 3 characters)" autocomplete="off">
-      <button onclick="registerUser()">Create Account & Enter</button>
+      <button onclick="registerUser()">Register & Claim Free Access</button>
+      
+      <div class="switch-link">
+        Already a member? <span onclick="toggleAuthMode('login')">Sign In here</span>
+      </div>
     </div>
 
-    <!-- SIGN IN FORM -->
+    <!-- SIGN IN VIEW (For already registered members) -->
     <div id="logForm" class="hidden">
-      <div style="font-size:11px; color:#05d9e8; margin-bottom:8px; text-align:center;">🔐 Sign in with your username and password</div>
+      <div style="font-size:11px; color:#05d9e8; margin-bottom:8px; text-align:center;">🔐 Sign in with your username/email and password</div>
       <input type="text" id="lUser" placeholder="Username or Email" autocomplete="off">
       <input type="password" id="lPass" placeholder="Password" autocomplete="off">
-      <button onclick="loginUser()">Enter System</button>
+      <button onclick="loginUser()">Sign In to System</button>
+      
+      <div class="switch-link">
+        New here? <span onclick="toggleAuthMode('register')">Register for 0-500 promo</span>
+      </div>
     </div>
 
     <div id="authError" style="color:#f87171; font-size:12px; text-align:center; margin-top:10px; font-weight:600;"></div>
@@ -620,10 +701,10 @@ button:active { transform: scale(0.98); }
 
     <!-- 4. PAYMENTS & REDEEM -->
     <div id="secPay" class="box-section hidden">
-      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>BTC & ETH (Direct Email Verification):</b></p>
-      <div style="font-size:11px;">Real BTC:</div>
+      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>BTC & ETH (Send proofs to po80payments@gmail.com):</b></p>
+      <div style="font-size:11px;">Real BTC Wallet:</div>
       <div class="wallet-box">${BTC_WALLET}</div>
-      <div style="font-size:11px;">Real ETH:</div>
+      <div style="font-size:11px;">Real ETH Wallet:</div>
       <div class="wallet-box">${ETH_WALLET}</div>
       
       <select id="selectPlan" style="width:100%; padding:10px; background:#1e293b; color:#fff; border-radius:8px; border:none; margin:8px 0; font-size:12px;">
@@ -633,7 +714,7 @@ button:active { transform: scale(0.98); }
       </select>
       
       <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Get Code & Instructions</button>
-      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.55); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate your code and send screenshot to po80payments@gmail.com</div>
+      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.55); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate your code and email screenshot to po80payments@gmail.com for activation code.</div>
       
       <input type="text" id="redeemInput" placeholder="Redeem Code SEXCITES-XXXX" autocomplete="off">
       <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Redeem VIP Months</button>
@@ -662,18 +743,14 @@ function createHeart() {
 }
 setInterval(createHeart, 350);
 
-function switchTab(tab) {
+function toggleAuthMode(mode) {
   document.getElementById('authError').innerText = '';
-  if(tab === 'reg') {
-    document.getElementById('regForm').classList.remove('hidden');
-    document.getElementById('logForm').classList.add('hidden');
-    document.getElementById('btnRegTab').style.background = 'rgba(255,255,255,0.12)';
-    document.getElementById('btnLogTab').style.background = 'transparent';
-  } else {
+  if(mode === 'login') {
     document.getElementById('regForm').classList.add('hidden');
     document.getElementById('logForm').classList.remove('hidden');
-    document.getElementById('btnLogTab').style.background = 'rgba(255,255,255,0.12)';
-    document.getElementById('btnRegTab').style.background = 'transparent';
+  } else {
+    document.getElementById('logForm').classList.add('hidden');
+    document.getElementById('regForm').classList.remove('hidden');
   }
 }
 
@@ -709,12 +786,13 @@ function switchDashTab(tab) {
 async function registerUser() {
   const username = document.getElementById('rUser').value;
   const email = document.getElementById('rEmail').value;
+  const phone = document.getElementById('rPhone').value;
   const password = document.getElementById('rPass').value;
   const errorBox = document.getElementById('authError');
   errorBox.innerText = '';
 
-  if(!username || !password) {
-    errorBox.innerText = 'Please enter username and password.';
+  if(!username || !password || !phone) {
+    errorBox.innerText = 'Please complete username, phone number, and password.';
     return;
   }
 
@@ -722,10 +800,15 @@ async function registerUser() {
     const res = await fetch('/api/register', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username, email, password })
+      body: JSON.stringify({ username, email, password, phone })
     });
     const data = await res.json();
     if(data.success) {
+      if(data.isFreePromo) {
+        alert('Congratulations! You are registration #' + data.totalCount + '. Your first 2 months are FREE!');
+      } else {
+        alert('Registration complete! The 0-500 free promo has ended. Please proceed to payment section.');
+      }
       initUserSession(data.user);
     } else {
       errorBox.innerText = data.error;
@@ -1002,7 +1085,7 @@ async function requestPaymentCode() {
   });
   const data = await res.json();
   if(data.success) {
-    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Code: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Send screenshot to ' + data.adminEmail + '</span>';
+    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Code: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Send payment proof to ' + data.adminEmail + ' to receive activation code.</span>';
   }
 }
 

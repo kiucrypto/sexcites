@@ -14,7 +14,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // ==========================================
 const users = new Map();          // id -> userObj
 const usersByName = new Map();    // username -> id
-const devices = new Map();        // deviceKey -> userId (Anti multi-account protection)
 const friends = new Map();        // userId -> Set(friendIds)
 const friendRequests = new Map(); // userId -> Map(senderId -> requestObj)
 const messages = new Map();       // chatId -> [ {senderId, text, type, timestamp} ]
@@ -33,84 +32,82 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V17.7 LIVE & FULLY OPERATIONAL');
+  res.status(200).send('SEXCITES.COM V17.9 LIVE & FULLY OPERATIONAL');
 });
 
 app.post('/api/register', (req, res) => {
-  const { username, email, password, deviceId, ip } = req.body;
-  
-  if (!username || username.length < 3 || !password || password.length < 4) {
-    return res.json({ success: false, error: 'Username must be at least 3 chars and password at least 4 chars.' });
+  try {
+    const { username, email, password } = req.body;
+    
+    if (!username || username.trim().length < 2 || !password || password.trim().length < 3) {
+      return res.json({ success: false, error: 'Por favor ingresa un usuario y contraseña válidos.' });
+    }
+
+    const cleanUser = username.trim().toLowerCase().replace('@', '');
+    if (usersByName.has(cleanUser)) {
+      return res.json({ success: false, error: 'Este nombre de usuario ya está en uso. Elige otro.' });
+    }
+
+    const userId = 'usr_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    const newUser = {
+      id: userId,
+      username: cleanUser,
+      email: (email || '').trim().toLowerCase(),
+      password: password,
+      isFree: true,
+      vipMonths: 2,
+      createdAt: Date.now()
+    };
+
+    users.set(userId, newUser);
+    usersByName.set(cleanUser, userId);
+    friends.set(userId, new Set());
+    friendRequests.set(userId, new Map());
+
+    res.json({ success: true, user: newUser });
+  } catch (err) {
+    res.json({ success: false, error: 'Error en el servidor al registrar.' });
   }
-
-  const cleanUser = username.trim().toLowerCase().replace('@', '');
-  if (usersByName.has(cleanUser)) {
-    return res.json({ success: false, error: 'Username already exists.' });
-  }
-
-  const deviceKey = (deviceId || 'unknown') + '_' + (ip || '127.0.0.1');
-  if (devices.has(deviceKey)) {
-    return res.json({ success: false, error: 'Multi-account blocked: An account is already registered from this device.' });
-  }
-
-  if (users.size >= 500) {
-    return res.json({ 
-      success: false, 
-      error: 'FREE QUOTA EXCEEDED (User 501+): The free 2-month tier is full. You must complete a payment plan first to unlock your account registration.' 
-    });
-  }
-
-  const userId = 'usr_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-  const newUser = {
-    id: userId,
-    username: cleanUser,
-    email: (email || '').trim().toLowerCase(),
-    password: password,
-    isFree: true,
-    vipMonths: 2,
-    createdAt: Date.now()
-  };
-
-  users.set(userId, newUser);
-  usersByName.set(cleanUser, userId);
-  devices.set(deviceKey, userId);
-  friends.set(userId, new Set());
-  friendRequests.set(userId, new Map());
-
-  res.json({ success: true, user: newUser });
 });
 
-// Direct Login endpoint
 app.post('/api/login', (req, res) => {
-  const { identifier, password } = req.body;
-  const cleanId = (identifier || '').trim().toLowerCase().replace('@', '');
-  
-  let userId = usersByName.get(cleanId);
-  
-  if (!userId) {
-    for (let [uId, uObj] of users.entries()) {
-      if (uObj.email === cleanId || uObj.username === cleanId) {
-        userId = uId;
-        break;
+  try {
+    const { identifier, password } = req.body;
+    const cleanId = (identifier || '').trim().toLowerCase().replace('@', '');
+    
+    if (!cleanId || !password) {
+      return res.json({ success: false, error: 'Por favor completa todos los campos.' });
+    }
+
+    let userId = usersByName.get(cleanId);
+    
+    if (!userId) {
+      for (let [uId, uObj] of users.entries()) {
+        if (uObj.email === cleanId || uObj.username === cleanId) {
+          userId = uId;
+          break;
+        }
       }
     }
-  }
 
-  if (!userId) {
-    return res.json({ success: false, error: 'User not found. Please check your username or email.' });
-  }
+    if (!userId) {
+      return res.json({ success: false, error: 'Usuario no encontrado. Regístrate primero.' });
+    }
 
-  const user = users.get(userId);
-  if (user.password !== password) {
-    return res.json({ success: false, error: 'Incorrect password.' });
-  }
+    const user = users.get(userId);
+    if (user.password !== password) {
+      return res.json({ success: false, error: 'Contraseña incorrecta.' });
+    }
 
-  res.json({ success: true, user });
+    res.json({ success: true, user });
+  } catch (err) {
+    res.json({ success: false, error: 'Error en el servidor al iniciar sesión.' });
+  }
 });
 
 app.post('/api/pay-request', (req, res) => {
   const { userId, planType } = req.body;
-  if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
+  if (!users.has(userId)) return res.json({ success: false, error: 'Usuario inválido.' });
 
   let months = 4;
   if (planType === 'VIP') months = 8;
@@ -125,13 +122,13 @@ app.post('/api/pay-request', (req, res) => {
     success: true, 
     hiddenCode, 
     adminEmail: ADMIN_EMAIL,
-    message: 'Reference generated successfully. Send your payment screenshot to ' + ADMIN_EMAIL + ' along with this code.' 
+    message: 'Código generado. Envía tu comprobante a ' + ADMIN_EMAIL + ' junto con este código.' 
   });
 });
 
 app.post('/api/redeem', (req, res) => {
   const { userId, code } = req.body;
-  if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
+  if (!users.has(userId)) return res.json({ success: false, error: 'Usuario inválido.' });
   
   const cleanCode = (code || '').trim().toUpperCase();
   let found = false;
@@ -150,20 +147,20 @@ app.post('/api/redeem', (req, res) => {
   }
 
   if (!found) {
-    return res.json({ success: false, error: 'Invalid or already redeemed code.' });
+    return res.json({ success: false, error: 'Código inválido o ya canjeado.' });
   }
 
   const user = users.get(userId);
   user.isFree = false;
   user.vipMonths = (user.vipMonths || 0) + targetMonths;
 
-  res.json({ success: true, message: 'Code successfully redeemed! VIP activated for ' + targetMonths + ' months.' });
+  res.json({ success: true, message: '¡Código canjeado con éxito! VIP activado por ' + targetMonths + ' meses.' });
 });
 
 app.post('/api/post', (req, res) => {
   const { userId, text, image } = req.body;
   const user = users.get(userId);
-  if (!user || (!text && !image)) return res.json({ success: false, error: 'Unauthorized or empty content.' });
+  if (!user || (!text && !image)) return res.json({ success: false, error: 'Contenido vacío.' });
 
   const newPost = {
     id: 'post_' + Date.now(),
@@ -186,7 +183,7 @@ app.post('/api/post/like', (req, res) => {
   const targetPost = posts.find(p => p.id === postId);
 
   if (!user || !targetPost) {
-    return res.json({ success: false, error: 'Invalid user or post.' });
+    return res.json({ success: false, error: 'Acción no válida.' });
   }
 
   const index = targetPost.likes.indexOf(userId);
@@ -209,7 +206,7 @@ app.post('/api/post/comment', (req, res) => {
   const targetPost = posts.find(p => p.id === postId);
 
   if (!user || !targetPost || (!text && !image)) {
-    return res.json({ success: false, error: 'Invalid post or empty comment.' });
+    return res.json({ success: false, error: 'Comentario vacío.' });
   }
 
   const newComment = {
@@ -253,7 +250,7 @@ io.on('connection', (socket) => {
     
     const targetId = usersByName.get(cleanTarget);
     if (!targetId || targetId === senderId) {
-      socket.emit('error-msg', { message: 'User does not exist or you cannot add yourself.' });
+      socket.emit('error-msg', { message: 'El usuario no existe o no puedes agregarte a ti mismo.' });
       return;
     }
 
@@ -262,7 +259,7 @@ io.on('connection', (socket) => {
 
     const reqsMap = friendRequests.get(targetId);
     if (reqsMap.has(senderId)) {
-      socket.emit('error-msg', { message: 'You have already sent a request to this user.' });
+      socket.emit('error-msg', { message: 'Ya enviaste una solicitud a este usuario.' });
       return;
     }
 
@@ -270,7 +267,7 @@ io.on('connection', (socket) => {
     reqsMap.set(senderId, requestObj);
 
     io.to(targetId).emit('friend:request-received', requestObj);
-    socket.emit('success-msg', { message: 'Friend request successfully sent to @' + cleanTarget });
+    socket.emit('success-msg', { message: 'Solicitud enviada a @' + cleanTarget });
   });
 
   socket.on('friend:accept', (data) => {
@@ -292,7 +289,7 @@ io.on('connection', (socket) => {
     const cleanPeer = (peerUsername || '').replace('@', '').trim().toLowerCase();
     const peerId = usersByName.get(cleanPeer);
     if(!peerId) {
-      socket.emit('error-msg', { message: 'User @' + cleanPeer + ' not found.' });
+      socket.emit('error-msg', { message: 'Usuario @' + cleanPeer + ' no encontrado.' });
       return;
     }
     const chatId = getChatId(userId, peerId);
@@ -319,20 +316,19 @@ io.on('connection', (socket) => {
   });
 });
 
-// Front-End Interface (Pure Black background, Neon Hearts, 24/7 Translate Widget, Independent Sign In & Register tabs)
+// Front-End Interface
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SEXCITES.COM — Private Community 18+</title>
+<title>SEXCITES.COM — Comunidad Privada 18+</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/socket.io/socket.io.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
 
-/* PURE BLACK BACKGROUND WITH MOVING NEON HEARTS */
 body {
   background-color: #000000;
   color: #fff;
@@ -344,7 +340,6 @@ body {
   position: relative;
 }
 
-/* FLOATING NEON HEART PARTICLES CONTAINER */
 .hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: hidden; }
 .heart { position: absolute; bottom: -50px; font-size: 24px; animation: floatUpParticle 6s linear infinite; filter: drop-shadow(0 0 12px rgba(255,42,109,0.9)); opacity: 0.85; }
 @keyframes floatUpParticle {
@@ -353,7 +348,6 @@ body {
   100% { transform: translateY(-110vh) scale(1.4) rotate(360deg); opacity: 0; }
 }
 
-/* SEXCITES 24/7 CUSTOM TRANSLATE WIDGET */
 .translate-float {
   position: fixed;
   top: 15px;
@@ -420,22 +414,9 @@ h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; 
   color: #cbd5e1;
   line-height: 1.4;
 }
-.founder-intro-box h3 {
-  font-size: 12px;
-  color: #ff2a6d;
-  margin-bottom: 4px;
-  font-weight: 700;
-}
-.founder-intro-box ul {
-  margin: 6px 0 6px 14px;
-}
-.founder-signature {
-  margin-top: 6px;
-  text-align: right;
-  font-style: italic;
-  color: #05d9e8;
-  font-weight: 600;
-}
+.founder-intro-box h3 { font-size: 12px; color: #ff2a6d; margin-bottom: 4px; font-weight: 700; }
+.founder-intro-box ul { margin: 6px 0 6px 14px; }
+.founder-signature { margin-top: 6px; text-align: right; font-style: italic; color: #05d9e8; font-weight: 600; }
 
 .special-phrase-box {
   margin-top: 12px;
@@ -454,10 +435,7 @@ h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; 
   color: #64748b;
   line-height: 1.3;
 }
-.terms-footer a {
-  color: #05d9e8;
-  text-decoration: none;
-}
+.terms-footer a { color: #05d9e8; text-decoration: none; }
 
 input {
   width: 100%;
@@ -500,7 +478,7 @@ button:active { transform: scale(0.98); }
 <script type="text/javascript">
   function googleTranslateElementInit() {
     new google.translate.TranslateElement({
-      pageLanguage: 'en',
+      pageLanguage: 'es',
       includedLanguages: 'es,en,fr,de,pt,it,ru,ja,zh-CN,ar,hi',
       layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
       autoDisplay: false
@@ -513,51 +491,46 @@ button:active { transform: scale(0.98); }
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private Community 18+ • Real-Time V17.7</div>
+  <div class="subtitle">Comunidad Privada 18+ • Tiempo Real V17.9</div>
 
   <!-- AUTH VIEW -->
   <div id="authView">
     <div style="display:flex; gap:10px; margin-bottom:15px;">
-      <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.12)">Register</button>
-      <button onclick="switchTab('log')" id="btnLogTab" style="background:transparent">Sign In</button>
+      <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.12)">Registrarse</button>
+      <button onclick="switchTab('log')" id="btnLogTab" style="background:transparent">Iniciar Sesión</button>
     </div>
 
     <!-- REGISTER FORM -->
     <div id="regForm">
-      <div style="font-size:11px; color:#4ade80; margin-bottom:8px; text-align:center;">🔥 Users 1 to 500 get 2 Months Free! (501+ Locked & Requires Payment)</div>
-      <input type="text" id="rUser" placeholder="Username (@example)" autocomplete="off">
-      <input type="email" id="rEmail" placeholder="Email address (Optional)" autocomplete="off">
-      <input type="password" id="rPass" placeholder="Password (Minimum 4 chars)" autocomplete="off">
-      <button onclick="registerUser()">Create Account (1 Device Block)</button>
+      <div style="font-size:11px; color:#4ade80; margin-bottom:8px; text-align:center;">🔥 ¡Regístrate rápido y entra al sistema!</div>
+      <input type="text" id="rUser" placeholder="Usuario (ej. tu_nombre)" autocomplete="off">
+      <input type="email" id="rEmail" placeholder="Correo electrónico (Opcional)" autocomplete="off">
+      <input type="password" id="rPass" placeholder="Contraseña (Mínimo 3 caracteres)" autocomplete="off">
+      <button onclick="registerUser()">Crear Cuenta y Entrar</button>
     </div>
 
-    <!-- SIGN IN FORM (Fully independent and direct) -->
+    <!-- SIGN IN FORM -->
     <div id="logForm" class="hidden">
-      <div style="font-size:11px; color:#05d9e8; margin-bottom:8px; text-align:center;">🔐 Sign In to your existing account</div>
-      <input type="text" id="lUser" placeholder="Username or Email" autocomplete="off">
-      <input type="password" id="lPass" placeholder="Password" autocomplete="off">
-      <button onclick="loginUser()">Sign In to System</button>
+      <div style="font-size:11px; color:#05d9e8; margin-bottom:8px; text-align:center;">🔐 Inicia sesión con tu usuario y contraseña</div>
+      <input type="text" id="lUser" placeholder="Usuario o Correo" autocomplete="off">
+      <input type="password" id="lPass" placeholder="Contraseña" autocomplete="off">
+      <button onclick="loginUser()">Entrar al Sistema</button>
     </div>
 
-    <div id="authError" style="color:#f87171; font-size:12px; text-align:center; margin-top:10px;"></div>
+    <div id="authError" style="color:#f87171; font-size:12px; text-align:center; margin-top:10px; font-weight:600;"></div>
 
-    <div class="founder-intro-box" id="founderIntroContainer">
-      <h3>🚀 Official Grand Debut (09-06-2026)</h3>
-      <p>Welcome to the official launch of <b>SEXCITES.com</b>. A verified private community built for seamless connections.</p>
-      <ul style="padding-left:12px;">
-        <li><b>Core Features:</b> Real-time direct chat, interactive wall with photos, instant likes, sharing tools, and 24/7 instant translation widget.</li>
-        <li><b>Upcoming Features:</b> HD video calls, advanced thematic chat rooms, and a dedicated mobile app.</li>
-        <li><b>Lowest market pricing</b> with completely transparent, fair access options in BTC and ETH.</li>
-      </ul>
-      <div class="founder-signature">With full commitment to the future,<br><b>Jhon Gonzales (Founder)</b></div>
+    <div class="founder-intro-box">
+      <h3>🚀 Gran Debut Oficial (06-09-2026)</h3>
+      <p>Bienvenido a <b>SEXCITES.com</b>. Comunidad segura con funciones en tiempo real y traductor integrado.</p>
+      <div class="founder-signature"><b>Jhon Gonzales (Fundador)</b></div>
     </div>
 
     <div class="special-phrase-box">
-      ✨ "Giving yourself a chance in life is never too late" ✨
+      ✨ "Darte una oportunidad en la vida nunca es tarde" ✨
     </div>
 
     <div class="terms-footer">
-      By registering you accept our <a href="#" onclick="alert('Terms & Conditions: Platform strictly exclusive for adults 18+. Privacy guaranteed under strict device security controls.'); return false;">Terms & Conditions</a> and Privacy Policy. © 2026 SEXCITES.com.
+      Al registrarte aceptas nuestros <a href="#" onclick="alert('Términos y Condiciones: Plataforma exclusiva para mayores de 18 años.'); return false;">Términos y Condiciones</a>. © 2026 SEXCITES.com.
     </div>
 
   </div>
@@ -566,76 +539,76 @@ button:active { transform: scale(0.98); }
   <div id="dashboardView" class="hidden">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
       <span id="welcomeUser" style="font-weight:600; color:#05d9e8;"></span>
-      <span class="badge-free" id="badgeStatus">2 Months Free Active</span>
+      <span class="badge-free" id="badgeStatus">Acceso VIP Activo</span>
     </div>
 
     <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:4px; margin-bottom:12px;">
-      <button onclick="switchDashTab('inbox')" id="tabBtnInbox" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.2)">Inbox</button>
-      <button onclick="switchDashTab('chat')" id="tabBtnChat" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Live Chat</button>
-      <button onclick="switchDashTab('wall')" id="tabBtnWall" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Wall</button>
-      <button onclick="switchDashTab('pay')" id="tabBtnPay" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Payments</button>
+      <button onclick="switchDashTab('inbox')" id="tabBtnInbox" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.2)">Bandeja</button>
+      <button onclick="switchDashTab('chat')" id="tabBtnChat" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Chat</button>
+      <button onclick="switchDashTab('wall')" id="tabBtnWall" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Muro</button>
+      <button onclick="switchDashTab('pay')" id="tabBtnPay" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Pagos</button>
     </div>
 
     <!-- 1. INBOX -->
     <div id="secInbox" class="box-section">
-      <p style="font-size:12px; margin-bottom:8px; color:#05d9e8;"><b>📥 Message & Request Inbox</b></p>
-      <input type="text" id="friendInput" placeholder="Add friend by username (ex: @lenoxjg)" autocomplete="off">
-      <button onclick="sendFriendRequest()" style="margin-bottom:12px; font-size:12px;">Send Friend Request</button>
-      <div style="font-size:12px; color:#cbd5e1; margin-bottom:6px;"><b>Pending Friend Requests:</b></div>
+      <p style="font-size:12px; margin-bottom:8px; color:#05d9e8;"><b>📥 Solicitudes y Amigos</b></p>
+      <input type="text" id="friendInput" placeholder="Añadir por usuario (ej: @nombre)" autocomplete="off">
+      <button onclick="sendFriendRequest()" style="margin-bottom:12px; font-size:12px;">Enviar Solicitud</button>
+      <div style="font-size:12px; color:#cbd5e1; margin-bottom:6px;"><b>Solicitudes Pendientes:</b></div>
       <div id="inboxList" style="background:rgba(0,0,0,0.45); border-radius:8px; padding:8px; max-height:140px; overflow-y:auto; font-size:12px;">
-        <span id="noReq" style="color:#94a3b8;">No pending requests</span>
+        <span id="noReq" style="color:#94a3b8;">No hay solicitudes pendientes</span>
       </div>
     </div>
 
     <!-- 2. LIVE CHAT -->
     <div id="secChat" class="box-section hidden">
-      <p style="font-size:12px; margin-bottom:8px; color:#ff2a6d;"><b>💬 Live Direct Chat & Photos</b></p>
+      <p style="font-size:12px; margin-bottom:8px; color:#ff2a6d;"><b>💬 Chat Directo y Fotos</b></p>
       <div style="display:flex; gap:6px; margin-bottom:8px;">
-        <input type="text" id="msgPeerUsername" placeholder="Friend Username (ex: @user)" autocomplete="off" style="margin:0;">
-        <button onclick="loadChatHistory()" style="width:110px; margin:0; font-size:11px;">Load History</button>
+        <input type="text" id="msgPeerUsername" placeholder="Usuario Amigo" autocomplete="off" style="margin:0;">
+        <button onclick="loadChatHistory()" style="width:110px; margin:0; font-size:11px;">Cargar Chat</button>
       </div>
       <div id="chatBox" style="height:150px; background:rgba(0,0,0,0.45); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;">
-        <div style="color:#94a3b8; text-align:center; padding-top:40px;">Enter friend username above & load history.</div>
+        <div style="color:#94a3b8; text-align:center; padding-top:40px;">Escribe el usuario arriba y carga el historial.</div>
       </div>
       <div style="display:flex; gap:6px;">
-        <input type="text" id="msgText" placeholder="Type message..." autocomplete="off" style="margin:0;">
+        <input type="text" id="msgText" placeholder="Escribe un mensaje..." autocomplete="off" style="margin:0;">
         <input type="file" id="imageInput" accept="image/*" style="display:none;" onchange="sendPhoto(event)">
-        <button onclick="document.getElementById('imageInput').click()" style="width:45px; margin:0; background:#334155;" title="Send Photo">📷</button>
-        <button onclick="sendMessage()" style="width:70px; margin:0;">Send</button>
+        <button onclick="document.getElementById('imageInput').click()" style="width:45px; margin:0; background:#334155;" title="Enviar Foto">📷</button>
+        <button onclick="sendMessage()" style="width:70px; margin:0;">Enviar</button>
       </div>
     </div>
 
     <!-- 3. WALL SECTION -->
     <div id="secWall" class="box-section hidden">
-      <textarea id="wallText" placeholder="What's on your mind on SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
+      <textarea id="wallText" placeholder="¿Qué estás pensando en SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
       <div style="display:flex; gap:6px; margin-bottom:10px;">
         <input type="file" id="wallImageInput" accept="image/*" style="display:none;" onchange="previewWallImage(event)">
-        <button onclick="document.getElementById('wallImageInput').click()" style="width:auto; padding:8px 12px; font-size:11px; background:#334155;">📷 Add Photo</button>
-        <button onclick="createPost()" style="font-size:12px; flex:1;">Post to Wall</button>
+        <button onclick="document.getElementById('wallImageInput').click()" style="width:auto; padding:8px 12px; font-size:11px; background:#334155;">📷 Añadir Foto</button>
+        <button onclick="createPost()" style="font-size:12px; flex:1;">Publicar en el Muro</button>
       </div>
-      <div id="wallImagePreview" style="font-size:11px; color:#4ade80; margin-bottom:6px; display:none;">Image attached successfully!</div>
+      <div id="wallImagePreview" style="font-size:11px; color:#4ade80; margin-bottom:6px; display:none;">¡Imagen adjuntada con éxito!</div>
       <div id="wallFeed" style="max-height:220px; overflow-y:auto; font-size:12px;"></div>
     </div>
 
     <!-- 4. PAYMENTS & REDEEM -->
     <div id="secPay" class="box-section hidden">
-      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>ONLY BTC & ETH (Direct Email Verification):</b></p>
-      <div style="font-size:11px;">Real BTC:</div>
+      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>BTC y ETH (Verificación Directa por Email):</b></p>
+      <div style="font-size:11px;">BTC Real:</div>
       <div class="wallet-box">${BTC_WALLET}</div>
-      <div style="font-size:11px;">Real ETH:</div>
+      <div style="font-size:11px;">ETH Real:</div>
       <div class="wallet-box">${ETH_WALLET}</div>
       
       <select id="selectPlan" style="width:100%; padding:10px; background:#1e293b; color:#fff; border-radius:8px; border:none; margin:8px 0; font-size:12px;">
-        <option value="REAL">$8.99 = 4M REAL</option>
-        <option value="VIP">$16.99 = 8M BEST VIP</option>
-        <option value="ONE_TIME">$28.99 = 12M ONE TIME</option>
+        <option value="REAL">$8.99 = 4 Meses REAL</option>
+        <option value="VIP">$16.99 = 8 Meses VIP</option>
+        <option value="ONE_TIME">$28.99 = 12 Meses Full</option>
       </select>
       
-      <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Get Code & Instructions</button>
-      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.55); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate code and send screenshot to po80payments@gmail.com</div>
+      <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Obtener Código e Instrucciones</button>
+      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.55); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Haz clic arriba para generar tu código y enviar captura a po80payments@gmail.com</div>
       
-      <input type="text" id="redeemInput" placeholder="Redeem Code SEXCITES-XXXX" autocomplete="off">
-      <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Redeem VIP Months</button>
+      <input type="text" id="redeemInput" placeholder="Canjear Código SEXCITES-XXXX" autocomplete="off">
+      <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Canjear Meses VIP</button>
     </div>
 
   </div>
@@ -709,43 +682,56 @@ async function registerUser() {
   const username = document.getElementById('rUser').value;
   const email = document.getElementById('rEmail').value;
   const password = document.getElementById('rPass').value;
-  const deviceId = 'dev_' + navigator.userAgent.length + '_' + screen.width;
+  const errorBox = document.getElementById('authError');
+  errorBox.innerText = '';
 
-  const res = await fetch('/api/register', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ username, email, password, deviceId })
-  });
-  const data = await res.json();
-  if(data.success) {
-    initUserSession(data.user);
-  } else {
-    document.getElementById('authError').innerText = data.error;
-    if(data.error.includes('FREE QUOTA EXCEEDED')) {
-      alert('Registration blocked for user 501+. Please make a direct crypto payment first to unlock your access.');
+  if(!username || !password) {
+    errorBox.innerText = 'Ingresa usuario y contraseña.';
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ username, email, password })
+    });
+    const data = await res.json();
+    if(data.success) {
+      initUserSession(data.user);
+    } else {
+      errorBox.innerText = data.error;
     }
+  } catch(e) {
+    errorBox.innerText = 'Error de conexión. Inténtalo de nuevo.';
   }
 }
 
 async function loginUser() {
   const identifier = document.getElementById('lUser').value;
   const password = document.getElementById('lPass').value;
+  const errorBox = document.getElementById('authError');
+  errorBox.innerText = '';
 
   if(!identifier || !password) {
-    document.getElementById('authError').innerText = 'Please enter username/email and password.';
+    errorBox.innerText = 'Ingresa usuario y contraseña.';
     return;
   }
 
-  const res = await fetch('/api/login', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ identifier, password })
-  });
-  const data = await res.json();
-  if(data.success) {
-    initUserSession(data.user);
-  } else {
-    document.getElementById('authError').innerText = data.error;
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ identifier, password })
+    });
+    const data = await res.json();
+    if(data.success) {
+      initUserSession(data.user);
+    } else {
+      errorBox.innerText = data.error;
+    }
+  } catch(e) {
+    errorBox.innerText = 'Error de conexión. Inténtalo de nuevo.';
   }
 }
 
@@ -761,7 +747,7 @@ function initUserSession(user) {
 socket.on('friend:request-received', (data) => {
   const box = document.getElementById('inboxList');
   document.getElementById('noReq').style.display = 'none';
-  box.innerHTML += '<div style="margin-top:6px; background:rgba(255,255,255,0.05); padding:8px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;"><span>Request from: <b>@' + data.senderUsername + '</b></span> <button onclick="acceptRequest(\\'' + data.senderId + '\\', \\'' + data.senderUsername + '\\')" style="width:auto; padding:4px 10px; font-size:10px;">Accept</button></div>';
+  box.innerHTML += '<div style="margin-top:6px; background:rgba(255,255,255,0.05); padding:8px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;"><span>De: <b>@' + data.senderUsername + '</b></span> <button onclick="acceptRequest(\\'' + data.senderId + '\\', \\'' + data.senderUsername + '\\')" style="width:auto; padding:4px 10px; font-size:10px;">Aceptar</button></div>';
 });
 
 function sendFriendRequest() {
@@ -772,7 +758,7 @@ function sendFriendRequest() {
 
 function acceptRequest(senderId, senderUsername) {
   socket.emit('friend:accept', { userId: currentUser.id, senderId });
-  alert('Friend request accepted! You can now chat with @' + senderUsername);
+  alert('¡Solicitud aceptada! Ya puedes chatear con @' + senderUsername);
   document.getElementById('msgPeerUsername').value = senderUsername;
   switchDashTab('chat');
   loadChatHistory();
@@ -780,7 +766,7 @@ function acceptRequest(senderId, senderUsername) {
 
 function loadChatHistory() {
   const peerUser = document.getElementById('msgPeerUsername').value.replace('@', '').trim().toLowerCase();
-  if(!peerUser) return alert('Please enter a friend username');
+  if(!peerUser) return alert('Ingresa el usuario de un amigo');
   socket.emit('chat:load-by-username', { userId: currentUser.id, peerUsername: peerUser });
 }
 
@@ -789,7 +775,7 @@ socket.on('chat:loaded', (data) => {
   const chatBox = document.getElementById('chatBox');
   chatBox.innerHTML = '';
   if(data.history.length === 0) {
-    chatBox.innerHTML = '<div style="color:#94a3b8; text-align:center;">No previous messages with this user. Start chatting!</div>';
+    chatBox.innerHTML = '<div style="color:#94a3b8; text-align:center;">No hay mensajes previos. ¡Empieza a chatear!</div>';
     return;
   }
   data.history.forEach(m => renderMessageItem(m, data.peerUsername));
@@ -805,7 +791,7 @@ socket.on('chat:incoming', (data) => {
 function renderMessageItem(m, peerName) {
   const chatBox = document.getElementById('chatBox');
   const isMe = m.senderId === currentUser.id;
-  const senderLabel = isMe ? 'You' : '@' + peerName;
+  const senderLabel = isMe ? 'Tú' : '@' + peerName;
   const color = isMe ? '#05d9e8' : '#ff2a6d';
   
   let content = m.text;
@@ -819,14 +805,14 @@ function renderMessageItem(m, peerName) {
 
 function sendMessage() {
   const text = document.getElementById('msgText').value;
-  if(!currentPeerId || !text) return alert('Load a valid chat history first or type a message.');
+  if(!currentPeerId || !text) return alert('Carga el historial de un chat o escribe un mensaje.');
   socket.emit('chat:message', { senderId: currentUser.id, recipientId: currentPeerId, text, type: 'text' });
   document.getElementById('msgText').value = '';
 }
 
 function sendPhoto(event) {
   const file = event.target.files[0];
-  if(!file || !currentPeerId) return alert('Load a chat history first before sending photos.');
+  if(!file || !currentPeerId) return alert('Carga un chat primero antes de enviar fotos.');
   const reader = new FileReader();
   reader.onload = function(e) {
     socket.emit('chat:message', { senderId: currentUser.id, recipientId: currentPeerId, text: e.target.result, type: 'image' });
@@ -847,7 +833,7 @@ function previewWallImage(event) {
 
 async function createPost() {
   const text = document.getElementById('wallText').value;
-  if(!text && !attachedWallImage) return alert('Write something or attach an image.');
+  if(!text && !attachedWallImage) return alert('Escribe algo o adjunta una imagen.');
 
   const res = await fetch('/api/post', {
     method: 'POST',
@@ -912,15 +898,15 @@ function renderSinglePost(p) {
   div.innerHTML = '<b style="color:#ff2a6d;">@' + p.author + '</b>' +
                   '<p style="margin-top:2px; color:#e2e8f0;">' + p.text + '</p>' + imgHTML +
                   '<div style="display:flex; gap:15px; margin-top:8px; font-size:11px;">' +
-                    '<button onclick="toggleLike(\\\'' + p.id + '\\\')" id="like_btn_' + p.id + '" style="width:auto; background:none; border:none; color:' + likeColor + '; cursor:pointer; padding:0; font-weight:600;">❤️ <span id="likes_count_' + p.id + '">' + likesCount + '</span> Likes</button>' +
-                    '<button onclick="sharePost(\\\'' + p.id + '\\\')" style="width:auto; background:none; border:none; color:#05d9e8; cursor:pointer; padding:0; font-weight:600;">🔗 Share</button>' +
+                    '<button onclick="toggleLike(\\\'' + p.id + '\\\')" id="like_btn_' + p.id + '" style="width:auto; background:none; border:none; color:' + likeColor + '; cursor:pointer; padding:0; font-weight:600;">❤️ <span id="likes_count_' + p.id + '">' + likesCount + '</span> Me gusta</button>' +
+                    '<button onclick="sharePost(\\\'' + p.id + '\\\')" style="width:auto; background:none; border:none; color:#05d9e8; cursor:pointer; padding:0; font-weight:600;">🔗 Compartir</button>' +
                   '</div>' +
                   commentsHTML +
                   '<div style="display:flex; gap:4px; margin-top:8px;">' +
-                    '<input type="text" id="reply_text_' + p.id + '" placeholder="Write a reply or post photo..." style="margin:0; font-size:11px; padding:6px;">' +
+                    '<input type="text" id="reply_text_' + p.id + '" placeholder="Escribe respuesta..." style="margin:0; font-size:11px; padding:6px;">' +
                     '<input type="file" id="reply_img_' + p.id + '" accept="image/*" style="display:none;" onchange="handleReplyImage(event, \\\\'' + p.id + '\\\\')">' +
-                    '<button onclick="document.getElementById(\\\'reply_img_' + p.id + '\\\').click()" style="width:36px; margin:0; padding:0; background:#334155; font-size:12px;" title="Attach photo">📷</button>' +
-                    '<button onclick="sendComment(\\\'' + p.id + '\\\')" style="width:70px; margin:0; padding:6px; font-size:11px;">Reply</button>' +
+                    '<button onclick="document.getElementById(\\\'reply_img_' + p.id + '\\\').click()" style="width:36px; margin:0; padding:0; background:#334155; font-size:12px;" title="Foto">📷</button>' +
+                    '<button onclick="sendComment(\\\'' + p.id + '\\\')" style="width:70px; margin:0; padding:6px; font-size:11px;">Responder</button>' +
                   '</div>';
 
   feed.prepend(div);
@@ -944,13 +930,8 @@ async function toggleLike(postId) {
 }
 
 function sharePost(postId) {
-  const shareText = 'Check out this post on SEXCITES.COM! ID: ' + postId;
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(window.location.origin + '#post-' + postId);
-    alert('Post link copied to clipboard! Share it with anyone.');
-  } else {
-    alert(shareText);
-  }
+  navigator.clipboard.writeText(window.location.origin + '#post-' + postId);
+  alert('¡Enlace de la publicación copiado al portapapeles!');
 }
 
 const replyImages = {};
@@ -960,7 +941,7 @@ function handleReplyImage(event, postId) {
   const reader = new FileReader();
   reader.onload = function(e) {
     replyImages[postId] = e.target.result;
-    alert('Photo attached to reply!');
+    alert('¡Foto adjuntada a la respuesta!');
   };
   reader.readAsDataURL(file);
 }
@@ -970,7 +951,7 @@ async function sendComment(postId) {
   const text = textInput.value;
   const image = replyImages[postId] || null;
 
-  if(!text && !image) return alert('Type a response or attach an image.');
+  if(!text && !image) return alert('Escribe una respuesta o adjunta una imagen.');
 
   const res = await fetch('/api/post/comment', {
     method: 'POST',
@@ -981,8 +962,6 @@ async function sendComment(postId) {
   if(data.success) {
     textInput.value = '';
     delete replyImages[postId];
-  } else {
-    alert(data.error);
   }
 }
 
@@ -993,11 +972,9 @@ async function requestPaymentCode() {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ userId: currentUser.id, planType })
   });
-  const data = await res.json();
+  const data = acid = await res.json();
   if(data.success) {
-    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Code: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Send screenshot to <a href="mailto:' + data.adminEmail + '" style="color:#05d9e8;">' + data.adminEmail + '</a>.</span>';
-  } else {
-    alert(data.error);
+    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Código: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Envía captura a ' + data.adminEmail + '</span>';
   }
 }
 
@@ -1011,9 +988,7 @@ async function redeemCode() {
   const data = await res.json();
   if(data.success) {
     alert(data.message);
-    document.getElementById('badgeStatus').innerText = 'VIP Active';
-    document.getElementById('badgeStatus').style.background = 'rgba(5,217,232,0.2)';
-    document.getElementById('badgeStatus').style.color = '#05d9e8';
+    document.getElementById('badgeStatus').innerText = 'VIP Activo';
   } else {
     alert(data.error);
   }
@@ -1025,5 +1000,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V17.7 running on port ' + PORT);
+  console.log('SEXCITES.COM V17.9 running on port ' + PORT);
 });

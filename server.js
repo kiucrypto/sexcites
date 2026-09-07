@@ -7,20 +7,20 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ==========================================
 // MEMORY STORAGE (High-speed Maps)
 // ==========================================
 const users = new Map();          // id -> userObj
 const usersByName = new Map();    // username -> id
-const devices = new Map();        // deviceKey -> userId (1 account per device - anti multicuentas)
+const devices = new Map();        // deviceKey -> userId (1 account per device - anti multi-account)
 const friends = new Map();        // userId -> Set(friendIds)
 const friendRequests = new Map(); // userId -> Map(senderId -> requestObj)
-const messages = new Map();       // chatId -> [ {senderId, text, timestamp} ]
+const messages = new Map();       // chatId -> [ {senderId, text, type, timestamp} ]
 const posts = [];                 // [ {id, author, text, timestamp, likes} ]
-const userCodes = new Map();      // userId -> [ {code, plan, months, active} ]
+const userCodes = new Map();      // userId -> [ {code, plan, months, used} ]
 
 const BTC_WALLET = "bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s";
 const ETH_WALLET = "0x4ABCf532fed9D9CFD0d3C4654cDFB56D02cFF21c";
@@ -35,10 +35,10 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V9 LIVE & OPERATIONAL');
+  res.status(200).send('SEXCITES.COM V13 LIVE & FULLY OPERATIONAL');
 });
 
-// Strict registration (1 device = 1 account, anti multi-account block)
+// Strict registration: 1 device = 1 account + 500 Free Limit Blocker (501+ requires payment first)
 app.post('/api/register', (req, res) => {
   const { username, email, password, deviceId, ip } = req.body;
   
@@ -56,8 +56,12 @@ app.post('/api/register', (req, res) => {
     return res.json({ success: false, error: 'Multi-account blocked: An account is already registered from this device.' });
   }
 
+  // STRICT 1 TO 500 FREE BLOCKER SYSTEM (501+ forced to pay)
   if (users.size >= 500) {
-    return res.json({ success: false, error: 'Free quota of 500 reached. VIP subscription required ($8.99 / $16.99 / $28.99).' });
+    return res.json({ 
+      success: false, 
+      error: 'FREE QUOTA EXCEEDED (User 501+): The free 2-month tier is full. You must complete a payment plan first to unlock your account registration.' 
+    });
   }
 
   const userId = 'usr_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
@@ -67,6 +71,7 @@ app.post('/api/register', (req, res) => {
     email: email || '',
     password: password,
     isFree: true,
+    vipMonths: 2, // 2 Months Free for users 1 to 500
     createdAt: Date.now()
   };
 
@@ -128,7 +133,7 @@ app.post('/api/pay-request', (req, res) => {
   });
 });
 
-// Redeem hidden code
+// Redeem hidden code system
 app.post('/api/redeem', (req, res) => {
   const { userId, code } = req.body;
   if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
@@ -184,10 +189,12 @@ app.get('/api/posts', (req, res) => {
 });
 
 // ==========================================
-// SOCKET.IO — REAL-TIME 0.1s (Live messaging & friends)
+// SOCKET.IO — REAL-TIME 0.1s (Live messaging, photos & friends)
 // ==========================================
 io.on('connection', (socket) => {
   let currentUserId = null;
+
+  socket.join = socket.join.bind(socket);
 
   socket.on('join', (userId) => {
     currentUserId = userId;
@@ -235,21 +242,26 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('chat:load', (data) => {
-    const { userId, peerId } = data;
+  socket.on('chat:load-by-username', (data) => {
+    const { userId, peerUsername } = data;
+    const peerId = usersByName.get(peerUsername);
+    if(!peerId) {
+      socket.emit('error-msg', { message: 'User @' + peerUsername + ' not found.' });
+      return;
+    }
     const chatId = getChatId(userId, peerId);
     const history = messages.get(chatId) || [];
-    socket.emit('chat:loaded', { peerId, history });
+    socket.emit('chat:loaded', { peerId, peerUsername, history });
   });
 
   socket.on('chat:message', (data) => {
-    const { senderId, recipientId, text } = data;
+    const { senderId, recipientId, text, type } = data;
     if (!text || !users.has(senderId) || !users.has(recipientId)) return;
 
     const chatId = getChatId(senderId, recipientId);
     if (!messages.has(chatId)) messages.set(chatId, []);
 
-    const msgObj = { senderId, text: text.trim(), timestamp: Date.now() };
+    const msgObj = { senderId, text: text.trim(), type: type || 'text', timestamp: Date.now() };
     messages.get(chatId).push(msgObj);
 
     io.to(recipientId).emit('chat:incoming', { senderId, ...msgObj });
@@ -263,7 +275,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Serve Front-End Web Interface with Google Translate Widget 24/7
+// Serve Front-End Web Interface (Fully in English, custom branded Tradutor Sexsites)
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -291,40 +303,55 @@ body {
   0% { transform: translateY(0) scale(0.8); opacity: 0.8; }
   100% { transform: translateY(-110vh) scale(1.2); opacity: 0; }
 }
-/* TRANSLATE FLOATING WIDGET 24/7 */
+
+/* CUSTOM BRANDED TRANSLATE WIDGET: Tradutor Sexsites */
 .translate-float {
   position: fixed;
   top: 15px;
   right: 15px;
-  background: rgba(18, 22, 48, 0.85);
+  background: rgba(18, 22, 48, 0.9);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 117, 140, 0.4);
-  padding: 8px 12px;
+  border: 1px solid rgba(255, 117, 140, 0.5);
+  padding: 6px 12px;
   border-radius: 30px;
-  box-shadow: 0 4px 20px rgba(255, 117, 140, 0.3);
+  box-shadow: 0 4px 20px rgba(255, 117, 140, 0.4);
   z-index: 9999;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   animation: pulseGlow 3s infinite;
 }
 @keyframes pulseGlow {
   0% { box-shadow: 0 0 10px rgba(255, 117, 140, 0.3); }
-  50% { box-shadow: 0 0 22px rgba(255, 117, 140, 0.7); }
+  50% { box-shadow: 0 0 24px rgba(255, 117, 140, 0.8); }
   100% { box-shadow: 0 0 10px rgba(255, 117, 140, 0.3); }
 }
+.translate-brand {
+  font-size: 11px;
+  font-weight: 700;
+  background: linear-gradient(90deg, #ff758c, #ff7eb3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* Completely hide Google native branding and labels */
+.goog-te-banner-frame { display: none !important; }
+.goog-logo-link { display: none !important; }
+.goog-te-gadget { color: transparent !important; font-size: 0 !important; }
+.goog-te-gadget span { display: none !important; }
+body { top: 0 !important; }
 .goog-te-combo {
   background: #1e293b !important;
   color: #fff !important;
   border: 1px solid rgba(255,255,255,0.2) !important;
-  padding: 6px 10px !important;
-  border-radius: 10px !important;
-  font-size: 12px !important;
+  padding: 4px 8px !important;
+  border-radius: 8px !important;
+  font-size: 11px !important;
   outline: none !important;
   cursor: pointer;
 }
-.goog-te-banner-frame { display: none !important; }
-body { top: 0 !important; }
 
 .app-container {
   width: 100%;
@@ -374,9 +401,9 @@ button:active { transform: scale(0.98); }
 </head>
 <body>
 
-<!-- FLOATING TRANSLATOR 24/7 -->
+<!-- CUSTOM BRANDED TRADUCTOR SEXCITES WIDGET -->
 <div class="translate-float">
-  <span style="font-size:14px;">🌐</span>
+  <span class="translate-brand">Traductor Sexsites</span>
   <div id="google_translate_element"></div>
 </div>
 <script type="text/javascript">
@@ -395,7 +422,7 @@ button:active { transform: scale(0.98); }
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private Community 18+ • Real-Time V9</div>
+  <div class="subtitle">Private Community 18+ • Real-Time V13</div>
 
   <!-- VIEW: LOGIN / REGISTER -->
   <div id="authView">
@@ -405,6 +432,7 @@ button:active { transform: scale(0.98); }
     </div>
 
     <div id="regForm">
+      <div style="font-size:11px; color:#4ade80; margin-bottom:8px; text-align:center;">🔥 Users 1 to 500 get 2 Months Free! (501+ Locked & Requires Payment)</div>
       <input type="text" id="rUser" placeholder="Username (@example)" autocomplete="off" autocorrect="off" spellcheck="false">
       <input type="email" id="rEmail" placeholder="Email address (Optional)" autocomplete="off" autocorrect="off" spellcheck="false">
       <input type="password" id="rPass" placeholder="Password (Minimum 4 chars)" autocomplete="off" autocorrect="off" spellcheck="false">
@@ -423,43 +451,55 @@ button:active { transform: scale(0.98); }
   <div id="dashboardView" class="hidden">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
       <span id="welcomeUser" style="font-weight:600; color:#38bdf8;"></span>
-      <span class="badge-free" id="badgeStatus">2 Months Free (1-500)</span>
+      <span class="badge-free" id="badgeStatus">2 Months Free Active</span>
     </div>
 
     <!-- INTERNAL TABS -->
-    <div style="display:flex; gap:5px; margin-bottom:12px;">
-      <button onclick="switchDashTab('chat')" style="font-size:12px; padding:8px;">Chats & Inbox</button>
-      <button onclick="switchDashTab('wall')" style="font-size:12px; padding:8px; background:rgba(255,255,255,0.1)">Wall</button>
-      <button onclick="switchDashTab('pay')" style="font-size:12px; padding:8px; background:rgba(255,255,255,0.1)">VIP Payments</button>
+    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:4px; margin-bottom:12px;">
+      <button onclick="switchDashTab('inbox')" id="tabBtnInbox" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.2)">Inbox</button>
+      <button onclick="switchDashTab('chat')" id="tabBtnChat" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Live Chat</button>
+      <button onclick="switchDashTab('wall')" id="tabBtnWall" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Wall</button>
+      <button onclick="switchDashTab('pay')" id="tabBtnPay" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Payments</button>
     </div>
 
-    <!-- CHAT & INBOX SECTION -->
-    <div id="secChat" class="box-section">
-      <input type="text" id="friendInput" placeholder="Add friend by username (ex: @LenoxJG)" autocomplete="off" autocorrect="off" spellcheck="false">
-      <button onclick="sendFriendRequest()" style="margin-bottom:10px; font-size:12px;">Send Friend Request</button>
+    <!-- 1. INBOX & MESSAGES BUZON SECTION -->
+    <div id="secInbox" class="box-section">
+      <p style="font-size:12px; margin-bottom:8px; color:#38bdf8;"><b>📥 Message & Request Inbox</b></p>
+      <input type="text" id="friendInput" placeholder="Add friend by username (ex: @lenoxjg)" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button onclick="sendFriendRequest()" style="margin-bottom:12px; font-size:12px;">Send Friend Request</button>
       
-      <div id="inboxList" style="font-size:12px; color:#cbd5e1; margin-bottom:10px; max-height:80px; overflow-y:auto;">
-        <strong>Requests Inbox:</strong> <span id="noReq">No new requests</span>
-      </div>
-
-      <div style="border-top:1px solid rgba(255,255,255,0.1); padding-top:8px;">
-        <input type="text" id="msgPeerId" placeholder="Friend ID to chat with" autocomplete="off" autocorrect="off" spellcheck="false">
-        <div id="chatBox" style="height:120px; background:rgba(0,0,0,0.3); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;"></div>
-        <div style="display:flex; gap:6px;">
-          <input type="text" id="msgText" placeholder="Type a live message..." autocomplete="off" autocorrect="off" spellcheck="false" style="margin:0;">
-          <button onclick="sendMessage()" style="width:80px; margin:0;">Send</button>
-        </div>
+      <div style="font-size:12px; color:#cbd5e1; margin-bottom:6px;"><b>Pending Friend Requests:</b></div>
+      <div id="inboxList" style="background:rgba(0,0,0,0.3); border-radius:8px; padding:8px; max-height:140px; overflow-y:auto; font-size:12px;">
+        <span id="noReq" style="color:#94a3b8;">No pending requests</span>
       </div>
     </div>
 
-    <!-- WALL SECTION -->
+    <!-- 2. LIVE CHAT SECTION (Supports Real-Time Messages & Photos) -->
+    <div id="secChat" class="box-section hidden">
+      <p style="font-size:12px; margin-bottom:8px; color:#ff758c;"><b>💬 Live Direct Chat & Photos</b></p>
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <input type="text" id="msgPeerUsername" placeholder="Friend Username (ex: @user)" autocomplete="off" autocorrect="off" spellcheck="false" style="margin:0;">
+        <button onclick="loadChatHistory()" style="width:110px; margin:0; font-size:11px;">Load History</button>
+      </div>
+      <div id="chatBox" style="height:150px; background:rgba(0,0,0,0.3); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;">
+        <div style="color:#94a3b8; text-align:center; padding-top:40px;">Enter friend username above & load history to start chatting live.</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <input type="text" id="msgText" placeholder="Type message or paste image..." autocomplete="off" autocorrect="off" spellcheck="false" style="margin:0;">
+        <input type="file" id="imageInput" accept="image/*" style="display:none;" onchange="sendPhoto(event)">
+        <button onclick="document.getElementById('imageInput').click()" style="width:45px; margin:0; background:#334155;" title="Send Photo">📷</button>
+        <button onclick="sendMessage()" style="width:70px; margin:0;">Send</button>
+      </div>
+    </div>
+
+    <!-- 3. WALL SECTION -->
     <div id="secWall" class="box-section hidden">
       <textarea id="wallText" placeholder="What's on your mind on SEXCITES.COM?" style="width:100%; height:60px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:8px; outline:none;" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
       <button onclick="createPost()" style="font-size:12px; margin-bottom:10px;">Post to Wall</button>
       <div id="wallFeed" style="max-height:180px; overflow-y:auto; font-size:12px;"></div>
     </div>
 
-    <!-- VIP PAYMENTS SECTION -->
+    <!-- 4. VIP PAYMENTS & REDEEM CODE SECTION -->
     <div id="secPay" class="box-section hidden">
       <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>ONLY BTC & ETH (Direct Email Verification):</b></p>
       <div style="font-size:11px;">Real BTC:</div>
@@ -487,6 +527,7 @@ button:active { transform: scale(0.98); }
 <script>
 const socket = io();
 let currentUser = null;
+let currentPeerId = null;
 
 function createHeart() {
   const container = document.getElementById('hearts');
@@ -517,12 +558,32 @@ function switchTab(tab) {
 }
 
 function switchDashTab(tab) {
+  document.getElementById('secInbox').classList.add('hidden');
   document.getElementById('secChat').classList.add('hidden');
   document.getElementById('secWall').classList.add('hidden');
   document.getElementById('secPay').classList.add('hidden');
-  if(tab === 'chat') document.getElementById('secChat').classList.remove('hidden');
-  if(tab === 'wall') document.getElementById('secWall').classList.remove('hidden');
-  if(tab === 'pay') document.getElementById('secPay').classList.remove('hidden');
+  
+  document.getElementById('tabBtnInbox').style.background = 'rgba(255,255,255,0.1)';
+  document.getElementById('tabBtnChat').style.background = 'rgba(255,255,255,0.1)';
+  document.getElementById('tabBtnWall').style.background = 'rgba(255,255,255,0.1)';
+  document.getElementById('tabBtnPay').style.background = 'rgba(255,255,255,0.1)';
+
+  if(tab === 'inbox') {
+    document.getElementById('secInbox').classList.remove('hidden');
+    document.getElementById('tabBtnInbox').style.background = 'rgba(255,255,255,0.2)';
+  }
+  if(tab === 'chat') {
+    document.getElementById('secChat').classList.remove('hidden');
+    document.getElementById('tabBtnChat').style.background = 'rgba(255,255,255,0.2)';
+  }
+  if(tab === 'wall') {
+    document.getElementById('secWall').classList.remove('hidden');
+    document.getElementById('tabBtnWall').style.background = 'rgba(255,255,255,0.2)';
+  }
+  if(tab === 'pay') {
+    document.getElementById('secPay').classList.remove('hidden');
+    document.getElementById('tabBtnPay').style.background = 'rgba(255,255,255,0.2)';
+  }
 }
 
 async function registerUser() {
@@ -541,6 +602,9 @@ async function registerUser() {
     initUserSession(data.user);
   } else {
     document.getElementById('authError').innerText = data.error;
+    if(data.error.includes('FREE QUOTA EXCEEDED')) {
+      alert('Registration blocked for user 501+. Please make a direct crypto payment first to unlock your access.');
+    }
   }
 }
 
@@ -573,7 +637,7 @@ function initUserSession(user) {
 socket.on('friend:request-received', (data) => {
   const box = document.getElementById('inboxList');
   document.getElementById('noReq').style.display = 'none';
-  box.innerHTML += '<div style="margin-top:4px; background:rgba(255,255,255,0.05); padding:6px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">Request from: <b>@' + data.senderUsername + '</b> <button onclick="acceptRequest(\\'' + data.senderId + '\\')" style="width:auto; padding:4px 8px; font-size:10px;">Accept</button></div>';
+  box.innerHTML += '<div style="margin-top:6px; background:rgba(255,255,255,0.05); padding:8px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;"><span>Request from: <b>@' + data.senderUsername + '</b></span> <button onclick="acceptRequest(\\'' + data.senderId + '\\', \\'' + data.senderUsername + '\\')" style="width:auto; padding:4px 10px; font-size:10px;">Accept</button></div>';
 });
 
 function sendFriendRequest() {
@@ -582,23 +646,69 @@ function sendFriendRequest() {
   document.getElementById('friendInput').value = '';
 }
 
-function acceptRequest(senderId) {
+function acceptRequest(senderId, senderUsername) {
   socket.emit('friend:accept', { userId: currentUser.id, senderId });
-  alert('Friendship successfully accepted!');
+  alert('Friend request accepted! You can now chat with @' + senderUsername);
+  document.getElementById('msgPeerUsername').value = senderUsername;
+  switchDashTab('chat');
+  loadChatHistory();
 }
 
-socket.on('chat:incoming', (data) => {
+function loadChatHistory() {
+  const peerUser = document.getElementById('msgPeerUsername').value.replace('@', '').trim().toLowerCase();
+  if(!peerUser) return alert('Please enter a friend username');
+  socket.emit('chat:load-by-username', { userId: currentUser.id, peerUsername: peerUser });
+}
+
+socket.on('chat:loaded', (data) => {
+  currentPeerId = data.peerId;
   const chatBox = document.getElementById('chatBox');
-  chatBox.innerHTML += '<div style="margin-bottom:4px;"><b>' + (data.senderId === currentUser.id ? 'You' : 'Friend') + ':</b> ' + data.text + '</div>';
+  chatBox.innerHTML = '';
+  if(data.history.length === 0) {
+    chatBox.innerHTML = '<div style="color:#94a3b8; text-align:center;">No previous messages with this user. Start chatting!</div>';
+    return;
+  }
+  data.history.forEach(m => renderMessageItem(m, data.peerUsername));
   chatBox.scrollTop = chatBox.scrollHeight;
 });
 
+socket.on('chat:incoming', (data) => {
+  if(currentPeerId && (data.senderId === currentPeerId || data.senderId === currentUser.id)) {
+    renderMessageItem(data, document.getElementById('msgPeerUsername').value.replace('@',''));
+  }
+});
+
+function renderMessageItem(m, peerName) {
+  const chatBox = document.getElementById('chatBox');
+  const isMe = m.senderId === currentUser.id;
+  const senderLabel = isMe ? 'You' : '@' + peerName;
+  const color = isMe ? '#38bdf8' : '#ff758c';
+  
+  let content = m.text;
+  if(m.type === 'image') {
+    content = '<br><img src="' + m.text + '" style="max-width:140px; border-radius:8px; margin-top:4px;">';
+  }
+
+  chatBox.innerHTML += '<div style="margin-bottom:6px;"><b style="color:' + color + ';">' + senderLabel + ':</b> ' + content + '</div>';
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
 function sendMessage() {
-  const recipientId = document.getElementById('msgPeerId').value;
   const text = document.getElementById('msgText').value;
-  if(!recipientId || !text) return;
-  socket.emit('chat:message', { senderId: currentUser.id, recipientId, text });
+  if(!currentPeerId || !text) return alert('Load a valid chat history first or type a message.');
+  socket.emit('chat:message', { senderId: currentUser.id, recipientId: currentPeerId, text, type: 'text' });
   document.getElementById('msgText').value = '';
+}
+
+function sendPhoto(event) {
+  const file = event.target.files[0];
+  if(!file || !currentPeerId) return alert('Load a chat history first before sending photos.');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const base64Image = e.target.result;
+    socket.emit('chat:message', { senderId: currentUser.id, recipientId: currentPeerId, text: base64Image, type: 'image' });
+  };
+  reader.readAsDataURL(file);
 }
 
 async function createPost() {
@@ -675,5 +785,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V9 running on port ' + PORT);
+  console.log('SEXCITES.COM V13 running on port ' + PORT);
 });

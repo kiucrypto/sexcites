@@ -407,13 +407,13 @@ button:active { transform: scale(0.98); }
   <div id="google_translate_element"></div>
 </div>
 <script type="text/javascript">
-  function googleTranslateElementInit() {
+  function sexcitesTranslateElementInit() {
     new google.translate.TranslateElement({
       pageLanguage: 'en',
       includedLanguages: 'es,en,fr,de,pt,it,ru,ja,zh-CN,ar,hi',
-      layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+      layout: .sexcites translate.TranslateElement.InlineLayout.SIMPLE,
       autoDisplay: false
-    }, 'google_translate_element');
+    }, 'sexcites_translate_element');
   }
 </script>
 <script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
@@ -465,7 +465,7 @@ button:active { transform: scale(0.98); }
     <!-- 1. INBOX & MESSAGES BUZON SECTION -->
     <div id="secInbox" class="box-section">
       <p style="font-size:12px; margin-bottom:8px; color:#38bdf8;"><b>📥 Message & Request Inbox</b></p>
-      <input type="text" id="friendInput" placeholder="Add friend by username (ex: @lenoxjg)" autocomplete="off" autocorrect="off" spellcheck="false">
+      <input type="text" id="friendInput" placeholder="Add friend by username (ex: @lenoxjg ✓ )" autocomplete="off" autocorrect="off" spellcheck="false">
       <button onclick="sendFriendRequest()" style="margin-bottom:12px; font-size:12px;">Send Friend Request</button>
       
       <div style="font-size:12px; color:#cbd5e1; margin-bottom:6px;"><b>Pending Friend Requests:</b></div>

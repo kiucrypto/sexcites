@@ -1,317 +1,235 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+app.use(express.json({ limit: '35mb' }));
+app.use(express.urlencoded({ extended: true, limit: '35mb' }));
 
 // ==========================================
-// REAL MEMORY DATABASE (Fully Operational)
+// PERSISTENT DATABASE & SECURITY CONTROLS
 // ==========================================
-const users = new Map();          // userId -> userObj
-const usersByName = new Map();    // username -> userId
-const friends = new Map();        // userId -> Set(friendIds)
-const friendRequests = new Map(); // userId -> Map(senderId -> requestObj)
-const messages = new Map();       // chatId -> [ {senderId, text, type, timestamp} ]
-const posts = [];                 // [ {id, author, text, image, timestamp, likes: [], comments: []} ]
-const userCodes = new Map();      // userId -> [ {code, plan, months, used} ]
+const DB_FILE = path.join(__dirname, 'database.json');
 
-let totalRegisteredCount = 0;     // Real counter for 0 to 500 promo system
+let db = {
+  users: {},      // username -> userObj
+  posts: [],      // array of posts
+  chats: {},      // chatId -> [messages]
+  requests: {}    // username -> { senderUsername: true }
+};
 
-const BTC_WALLET = "bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s";
-const ETH_WALLET = "0x4ABCf532fed9D9CFD0d3C4654cDFB56D02cFF21c";
+if (fs.existsSync(DB_FILE)) {
+  try {
+    const data = fs.readFileSync(DB_FILE, 'utf8');
+    db = JSON.parse(data);
+  } catch(e) {
+    console.log('Error reading DB, initializing new.');
+  }
+}
 
-function getChatId(id1, id2) {
-  return id1 < id2 ? id1 + '_' + id2 : id2 + '_' + id1;
+function saveDB() {
+  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+}
+
+const ipRegisterAttempts = new Map();
+const antiSpamChat = new Map();
+const blockedIPs = new Set();
+
+function getClientIP(req) {
+  return req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+}
+
+function getChatId(u1, u2) {
+  return u1 < u2 ? u1 + '_' + u2 : u2 + '_' + u1;
 }
 
 // ==========================================
-// REST API ENDPOINTS (Real Logic)
+// REST API (Real Authentication & Data)
 // ==========================================
-app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V20.0 REAL SYSTEM LIVE');
-});
-
 app.post('/api/register', (req, res) => {
-  try {
-    const { username, password } = req.body;
-    
-    if (!username || username.trim().length < 2 || !password || password.trim().length < 3) {
-      return res.json({ success: false, error: 'Please enter a valid username and password (min 3 chars).' });
-    }
-
-    const cleanUser = username.trim().toLowerCase().replace('@', '');
-    if (usersByName.has(cleanUser)) {
-      return res.json({ success: false, error: 'This username is already taken. Please choose another.' });
-    }
-
-    totalRegisteredCount++;
-    const isFreePromo = totalRegisteredCount <= 500;
-    const initialMonths = isFreePromo ? 2 : 0;
-
-    const userId = 'usr_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-    const newUser = {
-      id: userId,
-      username: cleanUser,
-      password: password,
-      isFree: isFreePromo,
-      vipMonths: initialMonths,
-      registrationNumber: totalRegisteredCount,
-      createdAt: Date.now()
-    };
-
-    users.set(userId, newUser);
-    usersByName.set(cleanUser, userId);
-    friends.set(userId, new Set());
-    friendRequests.set(userId, new Map());
-
-    res.json({ success: true, user: newUser, isFreePromo, totalCount: totalRegisteredCount });
-  } catch (err) {
-    res.json({ success: false, error: 'Server error during registration.' });
+  const ip = getClientIP(req);
+  if (blockedIPs.has(ip)) {
+    return res.json({ success: false, error: 'Access denied: IP blocked.' });
   }
+
+  const now = Date.now();
+  let record = ipRegisterAttempts.get(ip) || { count: 0, time: now };
+  if (now - record.time < 60000 && record.count >= 5) {
+    blockedIPs.add(ip);
+    return res.json({ success: false, error: 'Security Alert: Too many registration attempts.' });
+  }
+  record.count++;
+  ipRegisterAttempts.set(ip, record);
+
+  const { username, password } = req.body;
+  if (!username || username.trim().length < 3 || !password || password.trim().length < 4) {
+    return res.json({ success: false, error: 'Username (min 3 chars) and Password (min 4 chars) required.' });
+  }
+
+  const cleanUser = username.trim().toLowerCase().replace('@', '');
+  if (db.users[cleanUser]) {
+    return res.json({ success: false, error: 'Username is already taken.' });
+  }
+
+  const newUser = {
+    id: 'usr_' + Date.now(),
+    username: cleanUser,
+    password: password,
+    createdAt: Date.now()
+  };
+
+  db.users[cleanUser] = newUser;
+  db.requests[cleanUser] = {};
+  saveDB();
+
+  res.json({ success: true, user: newUser });
 });
 
 app.post('/api/login', (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const cleanId = (username || '').trim().toLowerCase().replace('@', '');
-    
-    if (!cleanId || !password) {
-      return res.json({ success: false, error: 'Please complete both username and password.' });
-    }
-
-    const userId = usersByName.get(cleanId);
-    if (!userId) {
-      return res.json({ success: false, error: 'User not found. Please register first.' });
-    }
-
-    const user = users.get(userId);
-    if (user.password !== password) {
-      return res.json({ success: false, error: 'Incorrect password.' });
-    }
-
-    res.json({ success: true, user });
-  } catch (err) {
-    res.json({ success: false, error: 'Server error during login.' });
-  }
-});
-
-app.post('/api/pay-request', (req, res) => {
-  const { userId, planType } = req.body;
-  if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
-
-  let months = 4;
-  if (planType === 'VIP') months = 8;
-  if (planType === 'ONE_TIME') months = 12;
-
-  const hiddenCode = 'SEXCITES-' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-  
-  if (!userCodes.has(userId)) userCodes.set(userId, []);
-  userCodes.get(userId).push({ code: hiddenCode, plan: planType, months, active: true, used: false });
-
-  res.json({ 
-    success: true, 
-    hiddenCode, 
-    message: 'Code generated successfully. Keep your code safe to activate your plan.' 
-  });
-});
-
-app.post('/api/redeem', (req, res) => {
-  const { userId, code } = req.body;
-  if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
-  
-  const cleanCode = (code || '').trim().toUpperCase();
-  let found = false;
-  let targetMonths = 0;
-
-  for (let [uId, codesList] of userCodes.entries()) {
-    for (let c of codesList) {
-      if (c.code === cleanCode && !c.used) {
-        c.used = true;
-        targetMonths = c.months;
-        found = true;
-        break;
-      }
-    }
-    if (found) break;
+  const ip = getClientIP(req);
+  if (blockedIPs.has(ip)) {
+    return res.json({ success: false, error: 'IP blocked.' });
   }
 
-  if (!found) {
-    return res.json({ success: false, error: 'Invalid or already redeemed code.' });
+  const { username, password } = req.body;
+  const cleanUser = (username || '').trim().toLowerCase().replace('@', '');
+
+  const user = db.users[cleanUser];
+  if (!user || user.password !== password) {
+    return res.json({ success: false, error: 'Invalid username or password.' });
   }
 
-  const user = users.get(userId);
-  user.isFree = false;
-  user.vipMonths = (user.vipMonths || 0) + targetMonths;
-
-  res.json({ success: true, message: 'Code successfully redeemed! VIP activated for ' + targetMonths + ' months.' });
-});
-
-app.post('/api/post', (req, res) => {
-  const { userId, text, image } = req.body;
-  const user = users.get(userId);
-  if (!user || (!text && !image)) return res.json({ success: false, error: 'Empty content.' });
-
-  const newPost = {
-    id: 'post_' + Date.now(),
-    author: user.username,
-    text: text ? text.trim() : '',
-    image: image || null,
-    timestamp: Date.now(),
-    likes: [],
-    comments: []
-  };
-
-  posts.unshift(newPost);
-  io.emit('new-post', { ...newPost, likesCount: 0, userHasLiked: false });
-  res.json({ success: true, post: newPost });
-});
-
-app.post('/api/post/like', (req, res) => {
-  const { userId, postId } = req.body;
-  const user = users.get(userId);
-  const targetPost = posts.find(p => p.id === postId);
-
-  if (!user || !targetPost) {
-    return res.json({ success: false, error: 'Invalid action.' });
-  }
-
-  const index = targetPost.likes.indexOf(userId);
-  let liked = false;
-  if (index === -1) {
-    targetPost.likes.push(userId);
-    liked = true;
-  } else {
-    targetPost.likes.splice(index, 1);
-    liked = false;
-  }
-
-  io.emit('post-liked', { postId, likesCount: targetPost.likes.length });
-  res.json({ success: true, liked, likesCount: targetPost.likes.length });
-});
-
-app.post('/api/post/comment', (req, res) => {
-  const { userId, postId, text, image } = req.body;
-  const user = users.get(userId);
-  const targetPost = posts.find(p => p.id === postId);
-
-  if (!user || !targetPost || (!text && !image)) {
-    return res.json({ success: false, error: 'Empty comment.' });
-  }
-
-  const newComment = {
-    id: 'comm_' + Date.now(),
-    author: user.username,
-    text: text ? text.trim() : '',
-    image: image || null,
-    timestamp: Date.now()
-  };
-
-  targetPost.comments.push(newComment);
-  io.emit('new-comment', { postId, comment: newComment });
-  res.json({ success: true, comment: newComment });
+  res.json({ success: true, user });
 });
 
 app.get('/api/posts', (req, res) => {
-  const userId = req.query.userId || '';
-  const formattedPosts = posts.map(p => ({
+  const currentUsername = req.query.username || '';
+  const formatted = db.posts.map(p => ({
     ...p,
     likesCount: p.likes.length,
-    userHasLiked: p.likes.includes(userId)
+    userHasLiked: p.likes.includes(currentUsername)
   }));
-  res.json({ success: true, posts: formattedPosts });
+  res.json({ success: true, posts: formatted });
 });
 
 // ==========================================
-// SOCKET.IO — REAL-TIME 24/7 COMMUNICATION
+// SOCKET.IO REAL-TIME ENGINE (24/7 Live)
 // ==========================================
 io.on('connection', (socket) => {
-  let currentUserId = null;
-  socket.join = socket.join.bind(socket);
-
-  socket.on('join', (userId) => {
-    currentUserId = userId;
-    socket.join(userId);
+  socket.on('join', (username) => {
+    socket.join(username);
   });
 
   socket.on('friend:request', (data) => {
-    const { senderId, targetUsername } = data;
-    const cleanTarget = (targetUsername || '').replace('@', '').trim().toLowerCase();
-    
-    const targetId = usersByName.get(cleanTarget);
-    if (!targetId || targetId === senderId) {
+    const { sender, target } = data;
+    const cleanTarget = (target || '').trim().toLowerCase().replace('@', '');
+
+    if (!db.users[cleanTarget] || cleanTarget === sender) {
       socket.emit('error-msg', { message: 'User does not exist or you cannot add yourself.' });
       return;
     }
 
-    const sender = users.get(senderId);
-    if (!sender) return;
+    if (!db.requests[cleanTarget]) db.requests[cleanTarget] = {};
+    db.requests[cleanTarget][sender] = true;
+    saveDB();
 
-    const reqsMap = friendRequests.get(targetId);
-    if (reqsMap.has(senderId)) {
-      socket.emit('error-msg', { message: 'You already sent a request to this user.' });
-      return;
-    }
-
-    const requestObj = { senderId, senderUsername: sender.username, timestamp: Date.now() };
-    reqsMap.set(senderId, requestObj);
-
-    io.to(targetId).emit('friend:request-received', requestObj);
-    socket.emit('success-msg', { message: 'Request sent to @' + cleanTarget });
-  });
-
-  socket.on('friend:accept', (data) => {
-    const { userId, senderId } = data;
-    const reqsMap = friendRequests.get(userId);
-    
-    if (reqsMap && reqsMap.has(senderId)) {
-      reqsMap.delete(senderId);
-      friends.get(userId).add(senderId);
-      friends.get(senderId).add(userId);
-
-      io.to(userId).emit('friend:accepted', { friendId: senderId });
-      io.to(senderId).emit('friend:accepted', { friendId: userId });
-    }
-  });
-
-  socket.on('chat:load-by-username', (data) => {
-    const { userId, peerUsername } = data;
-    const cleanPeer = (peerUsername || '').replace('@', '').trim().toLowerCase();
-    const peerId = usersByName.get(cleanPeer);
-    if(!peerId) {
-      socket.emit('error-msg', { message: 'User @' + cleanPeer + ' not found.' });
-      return;
-    }
-    const chatId = getChatId(userId, peerId);
-    const history = messages.get(chatId) || [];
-    socket.emit('chat:loaded', { peerId, peerUsername: cleanPeer, history });
+    io.to(cleanTarget).emit('friend:request-received', { sender });
+    socket.emit('success-msg', { message: 'Friend request successfully dispatched to @' + cleanTarget });
   });
 
   socket.on('chat:message', (data) => {
-    const { senderId, recipientId, text, type } = data;
-    if (!text || !users.has(senderId) || !users.has(recipientId)) return;
+    const { sender, recipient, text, type } = data;
+    if (!text || !db.users[recipient]) return;
 
-    const chatId = getChatId(senderId, recipientId);
-    if (!messages.has(chatId)) messages.set(chatId, []);
+    const last = antiSpamChat.get(sender) || 0;
+    const now = Date.now();
+    if (now - last < 300) {
+      socket.emit('error-msg', { message: 'Anti-spam protection: Please slow down.' });
+      return;
+    }
+    antiSpamChat.set(sender, now);
 
-    const msgObj = { senderId, text: text.trim(), type: type || 'text', timestamp: Date.now() };
-    messages.get(chatId).push(msgObj);
+    const chatId = getChatId(sender, recipient);
+    if (!db.chats[chatId]) db.chats[chatId] = [];
 
-    io.to(recipientId).emit('chat:incoming', { senderId, ...msgObj });
-    io.to(senderId).emit('chat:incoming', { senderId, ...msgObj });
+    const msgObj = { sender, text: text.trim(), type: type || 'text', timestamp: now };
+    db.chats[chatId].push(msgObj);
+    saveDB();
+
+    io.to(recipient).emit('chat:incoming', msgObj);
+    io.to(sender).emit('chat:incoming', msgObj);
   });
 
-  socket.on('disconnect', () => {
-    if (currentUserId) socket.leave(currentUserId);
+  socket.on('chat:load', (data) => {
+    const { user1, user2 } = data;
+    const chatId = getChatId(user1, user2);
+    const history = db.chats[chatId] || [];
+    socket.emit('chat:history-loaded', { history, peer: user2 });
+  });
+
+  socket.on('post:create', (data) => {
+    const { author, text, image } = data;
+    if (!text && !image) return;
+
+    const newPost = {
+      id: 'post_' + Date.now(),
+      author,
+      text: text ? text.trim() : '',
+      image: image || null,
+      timestamp: Date.now(),
+      likes: [],
+      comments: []
+    };
+
+    db.posts.unshift(newPost);
+    saveDB();
+
+    io.emit('post:new', { ...newPost, likesCount: 0, userHasLiked: false });
+  });
+
+  socket.on('post:like', (data) => {
+    const { postId, username } = data;
+    const post = db.posts.find(p => p.id === postId);
+    if (!post) return;
+
+    const idx = post.likes.indexOf(username);
+    if (idx === -1) {
+      post.likes.push(username);
+    } else {
+      post.likes.splice(idx, 1);
+    }
+    saveDB();
+
+    io.emit('post:liked', { postId, likesCount: post.likes.length });
+  });
+
+  socket.on('post:comment', (data) => {
+    const { postId, author, text, image } = data;
+    const post = db.posts.find(p => p.id === postId);
+    if (!post || (!text && !image)) return;
+
+    const comment = {
+      id: 'comm_' + Date.now(),
+      author,
+      text: text ? text.trim() : '',
+      image: image || null,
+      timestamp: Date.now()
+    };
+
+    post.comments.push(comment);
+    saveDB();
+
+    io.emit('post:commented', { postId, comment });
   });
 });
 
 // ==========================================
-// FRONT-END USER INTERFACE (English & Fully Active)
+// EXCLUSIVE OS FRONT-END INTERFACE
 // ==========================================
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -319,666 +237,487 @@ app.get('*', (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SEXCITES.COM — Private 18+ Community</title>
+<title>NEXUS OS — Exclusive Live Platform</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/socket.io/socket.io.js"></script>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; user-select: none; }
+body, html { width: 100%; height: 100%; overflow: hidden; background: #020005; color: #fff; }
 
-body {
-  background: #030005;
-  color: #fff;
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  overflow-x: hidden;
-  position: relative;
-}
-
-.motion-bg {
-  position: fixed;
-  top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; overflow: hidden;
-  background: linear-gradient(125deg, #090014, #18001e, #020008);
+/* ANIMATED DYNAMIC BACKGROUND */
+.animated-bg {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: linear-gradient(125deg, #05020a, #150724, #020005, #1f011a);
   background-size: 400% 400%;
-  animation: gradientShift 15s ease infinite;
+  animation: gradientMotion 15s ease infinite;
+  z-index: -2;
 }
-@keyframes gradientShift {
+@keyframes gradientMotion {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
 
-.neon-orb { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.6; animation: floatOrb 12s ease-in-out infinite alternate; }
-.orb-1 { width: 45vw; height: 45vw; background: rgba(255, 42, 109, 0.4); top: -10%; left: -10%; }
-.orb-2 { width: 50vw; height: 50vw; background: rgba(5, 217, 232, 0.35); bottom: -15%; right: -10%; animation-direction: alternate-reverse; }
-.orb-3 { width: 35vw; height: 35vw; background: rgba(121, 40, 202, 0.45); top: 30%; left: 35%; }
-@keyframes floatOrb {
-  0% { transform: translate(0px, 0px) scale(1); }
-  50% { transform: translate(40px, -50px) scale(1.15); }
-  100% { transform: translate(-30px, 30px) scale(0.9); }
+.particles {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background-image: radial-gradient(rgba(255, 42, 109, 0.15) 1px, transparent 1px), radial-gradient(rgba(5, 217, 232, 0.1) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 0, 20px 20px;
+  z-index: -1;
+  animation: particleShift 60s linear infinite;
+}
+@keyframes particleShift {
+  from { background-position: 0 0, 20px 20px; }
+  to { background-position: 1000px 1000px, 1020px 1020px; }
 }
 
-.hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: hidden; }
-.heart { position: absolute; bottom: -50px; font-size: 24px; animation: floatUpParticle 6s linear infinite; filter: drop-shadow(0 0 12px rgba(255,42,109,0.9)); opacity: 0.85; }
-@keyframes floatUpParticle {
-  0% { transform: translateY(0) scale(0.6) rotate(0deg); opacity: 0.9; }
-  50% { transform: translateY(-55vh) scale(1.15) rotate(180deg); opacity: 0.7; }
-  100% { transform: translateY(-110vh) scale(1.4) rotate(360deg); opacity: 0; }
+/* OS LOCK / AUTH SCREEN */
+#osLockScreen {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; justify-content: center; align-items: center;
+  background: rgba(2, 0, 5, 0.85);
+  backdrop-filter: blur(25px);
+  z-index: 9999;
+  transition: opacity 0.5s ease;
 }
-
-.translate-float {
-  position: fixed; top: 15px; right: 15px;
-  background: rgba(12, 16, 38, 0.85); backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 42, 109, 0.5); padding: 6px 14px; border-radius: 30px;
-  box-shadow: 0 4px 25px rgba(255, 42, 109, 0.4); z-index: 9999; display: flex; align-items: center; gap: 8px;
+.lock-card {
+  width: 380px;
+  background: rgba(18, 10, 30, 0.75);
+  border: 1px solid rgba(255, 42, 109, 0.35);
+  border-radius: 24px;
+  padding: 30px;
+  box-shadow: 0 30px 90px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.1);
+  text-align: center;
 }
-.translate-brand {
-  font-size: 11px; font-weight: 700;
+.lock-card h1 {
+  font-size: 26px;
   background: linear-gradient(90deg, #ff2a6d, #05d9e8);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-transform: uppercase;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 6px;
+  letter-spacing: 1px;
 }
-.goog-te-banner-frame { display: none !important; }
-.goog-logo-link { display: none !important; }
-.goog-te-gadget { color: transparent !important; font-size: 0 !important; }
-.goog-te-gadget span { display: none !important; }
-body { top: 0 !important; }
-.goog-te-combo {
-  background: #1e293b !important; color: #fff !important; border: 1px solid rgba(255,255,255,0.2) !important;
-  padding: 4px 8px !important; border-radius: 8px !important; font-size: 11px !important; outline: none !important; cursor: pointer;
+.lock-card p { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 24px; }
+input, textarea { width: 100%; padding: 14px; margin-bottom: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; color: #fff; font-size: 13px; outline: none; transition: 0.3s; }
+input:focus, textarea:focus { border-color: #ff2a6d; background: rgba(255,255,255,0.07); box-shadow: 0 0 15px rgba(255,42,109,0.2); }
+button.os-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #ff2a6d, #7928ca); border: none; border-radius: 12px; color: white; font-weight: 700; font-size: 13px; cursor: pointer; transition: 0.2s; box-shadow: 0 10px 25px rgba(255,42,109,0.4); }
+button.os-btn:active { transform: scale(0.97); }
+.auth-switch { margin-top: 15px; font-size: 12px; color: #94a3b8; cursor: pointer; }
+.auth-switch span { color: #05d9e8; font-weight: 600; text-decoration: underline; }
+
+/* DESKTOP ENVIRONMENT */
+#osDesktop {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  position: relative;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+#osDesktop.active { opacity: 1; pointer-events: auto; }
+
+/* OS TOP BAR */
+.os-topbar {
+  height: 44px;
+  background: rgba(10, 5, 20, 0.65);
+  backdrop-filter: blur(15px);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 20px;
+  z-index: 100;
+}
+.os-logo { font-weight: 700; font-size: 14px; background: linear-gradient(90deg, #ff2a6d, #05d9e8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.os-status { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #cbd5e1; }
+.live-indicator { background: rgba(34,197,94,0.2); color: #4ade80; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; border: 1px solid rgba(34,197,94,0.3); }
+
+/* MAIN WORKSPACE & WINDOW MANAGEMENT */
+.os-workspace {
+  flex: 1; position: relative; padding: 20px; overflow: hidden;
+  display: flex; gap: 20px; justify-content: center; align-items: center;
 }
 
-.app-container {
-  width: 100%; max-width: 480px;
-  background: rgba(15, 10, 25, 0.85); backdrop-filter: blur(30px) saturate(200%);
-  border: 1px solid rgba(255, 42, 109, 0.35); border-radius: 24px;
-  box-shadow: 0 30px 90px rgba(0,0,0,0.95), 0 0 40px rgba(255, 42, 109, 0.2);
-  z-index: 10; padding: 24px; margin: 15px;
+.os-window {
+  width: 100%; max-width: 560px; height: 82vh;
+  background: rgba(12, 6, 22, 0.82);
+  backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  box-shadow: 0 30px 70px rgba(0,0,0,0.8);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  position: absolute;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
 }
-h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; background: linear-gradient(90deg, #ff2a6d, #05d9e8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.subtitle { font-size: 11px; text-align: center; color: #a5b4fc; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px; }
+.os-window.minimized { transform: scale(0.8) translateY(100px); opacity: 0; pointer-events: none; }
 
-.promo-banner {
-  background: linear-gradient(135deg, rgba(255,42,109,0.2), rgba(5,217,232,0.2));
-  border: 1px solid rgba(255,42,109,0.5); padding: 10px; border-radius: 12px;
-  text-align: center; font-size: 11px; color: #fff; margin-bottom: 12px; font-weight: 600;
+.window-header {
+  height: 40px; background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px; font-size: 12px; font-weight: 600; color: #cbd5e1;
 }
+.window-dots { display: flex; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot-red { background: #ff5f56; } .dot-yellow { background: #ffbd2e; } .dot-green { background: #27c93f; }
 
-.founder-intro-box {
-  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 42, 109, 0.3);
-  border-radius: 14px; padding: 12px; margin-top: 15px; font-size: 11px; color: #cbd5e1; line-height: 1.4;
-}
-.founder-intro-box h3 { font-size: 12px; color: #ff2a6d; margin-bottom: 4px; font-weight: 700; }
-.founder-signature { margin-top: 6px; text-align: right; font-style: italic; color: #05d9e8; font-weight: 600; }
+.window-content { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; }
 
-.special-phrase-box {
-  margin-top: 12px; text-align: center; font-size: 12px; font-weight: 700; color: #ff2a6d; text-shadow: 0 0 12px rgba(255, 42, 109, 0.6);
+/* OS DOCK / NAVIGATION BAR */
+.os-dock {
+  height: 70px; background: rgba(10, 5, 20, 0.7);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; justify-content: center; align-items: center; gap: 14px;
+  z-index: 100;
 }
+.dock-icon {
+  width: 48px; height: 48px; background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
+  display: flex; justify-content: center; align-items: center; cursor: pointer;
+  font-size: 20px; transition: 0.2s; position: relative;
+}
+.dock-icon:hover { transform: translateY(-5px) scale(1.08); background: rgba(255,42,109,0.2); border-color: #ff2a6d; box-shadow: 0 10px 20px rgba(255,42,109,0.3); }
+.dock-icon.active { background: rgba(5,217,232,0.2); border-color: #05d9e8; }
 
-.terms-footer {
-  margin-top: 10px; text-align: center; font-size: 10px; color: #64748b; line-height: 1.3;
-}
-.terms-footer a { color: #05d9e8; text-decoration: none; }
-
-input {
-  width: 100%; padding: 12px 16px; margin-bottom: 12px;
-  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px; color: #fff; font-size: 14px; outline: none; transition: all 0.3s;
-}
-input:focus { border-color: #ff2a6d; box-shadow: 0 0 12px rgba(255,42,109,0.4); }
-
-button {
-  width: 100%; padding: 12px; background: linear-gradient(135deg, #ff2a6d 0%, #7928ca 100%);
-  border: none; border-radius: 12px; color: white; font-weight: 600; font-size: 14px; cursor: pointer;
-}
-button:active { transform: scale(0.98); }
 .hidden { display: none !important; }
-.box-section { margin-top: 15px; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); }
-.badge-free { background: rgba(34,197,94,0.2); color: #4ade80; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-.wallet-box { font-family: monospace; font-size: 11px; background: rgba(0,0,0,0.55); padding: 8px; border-radius: 8px; margin: 6px 0; word-break: break-all; color: #05d9e8; }
-.switch-link { text-align: center; margin-top: 12px; font-size: 12px; color: #cbd5e1; cursor: pointer; }
-.switch-link span { color: #05d9e8; font-weight: 600; text-decoration: underline; }
 </style>
 </head>
 <body>
 
-<div class="motion-bg">
-  <div class="neon-orb orb-1"></div>
-  <div class="neon-orb orb-2"></div>
-  <div class="neon-orb orb-3"></div>
-</div>
+<div class="animated-bg"></div>
+<div class="particles"></div>
 
-<div class="translate-float">
-  <span class="translate-brand">Language</span>
-  <div id="google_translate_element"></div>
-</div>
-<script type="text/javascript">
-  function googleTranslateElementInit() {
-    new google.translate.TranslateElement({
-      pageLanguage: 'en',
-      includedLanguages: 'en,es,fr,de,pt,it,ru,ja,zh-CN,ar,hi',
-      layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
-      autoDisplay: false
-    }, 'google_translate_element');
-  }
-</script>
-<script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+<!-- EXCLUSIVE OS LOCK SCREEN (REGISTER & LOGIN SECTIONS) -->
+<div id="osLockScreen">
+  <div class="lock-card">
+    <h1>NEXUS OS</h1>
+    <p>Secure Enterprise Workspace</p>
 
-<div class="hearts-container" id="hearts"></div>
-
-<div class="app-container" id="mainApp">
-  <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private 18+ Community • Real-Time V20.0</div>
-
-  <!-- AUTH VIEW (Username & Password Only) -->
-  <div id="authView">
-    
-    <!-- REGISTER VIEW -->
-    <div id="regForm">
-      <div style="font-size:12px; color:#05d9e8; margin-bottom:8px; text-align:center; font-weight:700;">📝 New Member Registration</div>
-      <div class="promo-banner">
-        🔥 PROMO (0 - 500): First 2 months completely FREE! Only username & password required.
-      </div>
-      <input type="text" id="rUser" placeholder="Username (e.g. your_name)" autocomplete="off">
-      <input type="password" id="rPass" placeholder="Password (Minimum 3 characters)" autocomplete="off">
-      <button onclick="registerUser()">Register & Claim Free Access</button>
-      
-      <div class="switch-link">
-        Already registered? <span onclick="toggleAuthMode('login')">Sign In here</span>
-      </div>
+    <!-- REGISTER SPACE -->
+    <div id="regSpace">
+      <div style="font-size:12px; color:#05d9e8; margin-bottom:10px; font-weight:700;">✨ New User Profile Creation</div>
+      <input type="text" id="rUser" placeholder="Username (min 3 chars)" autocomplete="off">
+      <input type="password" id="rPass" placeholder="Password (min 4 chars)" autocomplete="off">
+      <button class="os-btn" onclick="registerUser()">Initialize Account</button>
+      <div class="auth-switch">Already registered? <span onclick="toggleAuthMode('login')">Sign In to Session</span></div>
     </div>
 
-    <!-- SIGN IN VIEW (Dedicated for Existing Users) -->
-    <div id="logForm" class="hidden">
-      <div style="font-size:12px; color:#ff2a6d; margin-bottom:8px; text-align:center; font-weight:700;">🔐 Existing Member Sign In</div>
-      <div style="font-size:11px; color:#a5b4fc; margin-bottom:12px; text-align:center;">Welcome back! Enter your username and password to access your account.</div>
+    <!-- LOGIN SPACE -->
+    <div id="logSpace" class="hidden">
+      <div style="font-size:12px; color:#ff2a6d; margin-bottom:10px; font-weight:700;">🔐 Secure Section Sign In</div>
       <input type="text" id="lUser" placeholder="Your Username" autocomplete="off">
       <input type="password" id="lPass" placeholder="Your Password" autocomplete="off">
-      <button onclick="loginUser()">Sign In to Dashboard</button>
-      
-      <div class="switch-link">
-        New here? <span onclick="toggleAuthMode('register')">Switch to Register</span>
-      </div>
+      <button class="os-btn" onclick="loginUser()">Access OS Environment</button>
+      <div class="auth-switch">New to Nexus? <span onclick="toggleAuthMode('register')">Create User Profile</span></div>
     </div>
 
-    <div id="authError" style="color:#f87171; font-size:12px; text-align:center; margin-top:10px; font-weight:600;"></div>
+    <div id="authAlert" style="color:#f87171; font-size:11px; margin-top:10px; font-weight:600;"></div>
+  </div>
+</div>
 
-    <div class="founder-intro-box">
-      <h3>🚀 Official Grand Debut (09-06-2026)</h3>
-      <p>Welcome to <b>SEXCITES.com</b>. Secure community with real-time features and integrated translator.</p>
-      <div class="founder-signature"><b>Jhon Gonzales (Founder)</b></div>
+<!-- OS DESKTOP ENVIRONMENT -->
+<div id="osDesktop">
+  <div class="os-topbar">
+    <div class="os-logo">NEXUS OS // CLOUD ENVIRONMENT</div>
+    <div class="os-status">
+      <span id="osUserDisplay" style="font-weight:700; color:#05d9e8;"></span>
+      <span class="live-indicator">● LIVE 24/7</span>
     </div>
-
-    <div class="special-phrase-box">
-      ✨ "Giving yourself a chance in life is never too late" ✨
-    </div>
-
-    <div class="terms-footer">
-      By registering you accept our <a href="#" onclick="alert('Terms & Conditions: Platform exclusive for adults 18+.'); return false;">Terms & Conditions</a>. © 2026 SEXCITES.com.
-    </div>
-
   </div>
 
-  <!-- DASHBOARD VIEW -->
-  <div id="dashboardView" class="hidden">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-      <span id="welcomeUser" style="font-weight:600; color:#05d9e8;"></span>
-      <span class="badge-free" id="badgeStatus">VIP Access Active</span>
-    </div>
-
-    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:4px; margin-bottom:12px;">
-      <button onclick="switchDashTab('inbox')" id="tabBtnInbox" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.2)">Inbox</button>
-      <button onclick="switchDashTab('chat')" id="tabBtnChat" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Chat</button>
-      <button onclick="switchDashTab('wall')" id="tabBtnWall" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Wall</button>
-      <button onclick="switchDashTab('pay')" id="tabBtnPay" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Payments</button>
-    </div>
-
-    <!-- 1. INBOX -->
-    <div id="secInbox" class="box-section">
-      <p style="font-size:12px; margin-bottom:8px; color:#05d9e8;"><b>📥 Requests & Friends</b></p>
-      <input type="text" id="friendInput" placeholder="Add by username (e.g: @name)" autocomplete="off">
-      <button onclick="sendFriendRequest()" style="margin-bottom:12px; font-size:12px;">Send Request</button>
-      <div style="font-size:12px; color:#cbd5e1; margin-bottom:6px;"><b>Pending Requests:</b></div>
-      <div id="inboxList" style="background:rgba(0,0,0,0.45); border-radius:8px; padding:8px; max-height:140px; overflow-y:auto; font-size:12px;">
-        <span id="noReq" style="color:#94a3b8;">No pending requests</span>
+  <div class="os-workspace">
+    <!-- WALL / FEED APP WINDOW -->
+    <div class="os-window" id="appWall">
+      <div class="window-header">
+        <div class="window-dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+        <span>Nexus Wall Feed & Media</span>
+        <span>🌐</span>
+      </div>
+      <div class="window-content">
+        <textarea id="wallText" placeholder="Broadcast to the ecosystem..." style="height:60px; font-size:12px; margin-bottom:8px;"></textarea>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <input type="file" id="wallImg" accept="image/*" style="display:none;" onchange="previewWallImg(event)">
+          <button class="os-btn" onclick="document.getElementById('wallImg').click()" style="width:auto; padding:8px 14px; background:#334155; font-size:11px;">📷 Attach Photo</button>
+          <button class="os-btn" onclick="createPost()" style="font-size:11px; flex:1;">Publish Live</button>
+        </div>
+        <div id="wallFeed" style="flex:1; overflow-y:auto; font-size:11px; display:flex; flex-direction:column; gap:8px;"></div>
       </div>
     </div>
 
-    <!-- 2. LIVE CHAT -->
-    <div id="secChat" class="box-section hidden">
-      <p style="font-size:12px; margin-bottom:8px; color:#ff2a6d;"><b>💬 Direct Chat & Photos</b></p>
-      <div style="display:flex; gap:6px; margin-bottom:8px;">
-        <input type="text" id="msgPeerUsername" placeholder="Friend Username" autocomplete="off" style="margin:0;">
-        <button onclick="loadChatHistory()" style="width:110px; margin:0; font-size:11px;">Load Chat</button>
+    <!-- PRIVATE CHAT APP WINDOW -->
+    <div class="os-window hidden" id="appChat">
+      <div class="window-header">
+        <div class="window-dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+        <span>Nexus Secure Messenger</span>
+        <span>💬</span>
       </div>
-      <div id="chatBox" style="height:150px; background:rgba(0,0,0,0.45); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;">
-        <div style="color:#94a3b8; text-align:center; padding-top:40px;">Type the username above and load history.</div>
-      </div>
-      <div style="display:flex; gap:6px;">
-        <input type="text" id="msgText" placeholder="Type a message..." autocomplete="off" style="margin:0;">
-        <input type="file" id="imageInput" accept="image/*" style="display:none;" onchange="sendPhoto(event)">
-        <button onclick="document.getElementById('imageInput').click()" style="width:45px; margin:0; background:#334155;" title="Send Photo">📷</button>
-        <button onclick="sendMessage()" style="width:70px; margin:0;">Send</button>
+      <div class="window-content">
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <input type="text" id="chatPeer" placeholder="Target username..." style="margin:0; font-size:11px;" autocomplete="off">
+          <button class="os-btn" onclick="loadChat()" style="width:100px; margin:0; font-size:11px;">Open Chat</button>
+        </div>
+        <div id="chatBox" style="flex:1; background:rgba(0,0,0,0.45); border-radius:12px; padding:10px; overflow-y:auto; font-size:11px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.05);">
+          <div style="color:#64748b; text-align:center; padding-top:60px;">Enter a username above to load communication history.</div>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="msgText" placeholder="Type encrypted message..." style="margin:0; font-size:11px;" autocomplete="off">
+          <input type="file" id="chatImg" accept="image/*" style="display:none;" onchange="sendChatPhoto(event)">
+          <button class="os-btn" onclick="document.getElementById('chatImg').click()" style="width:42px; margin:0; background:#334155;" title="Photo">📷</button>
+          <button class="os-btn" onclick="sendChatMessage()" style="width:70px; margin:0; font-size:11px;">Send</button>
+        </div>
       </div>
     </div>
 
-    <!-- 3. WALL SECTION -->
-    <div id="secWall" class="box-section hidden">
-      <textarea id="wallText" placeholder="What are you thinking on SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
-      <div style="display:flex; gap:6px; margin-bottom:10px;">
-        <input type="file" id="wallImageInput" accept="image/*" style="display:none;" onchange="previewWallImage(event)">
-        <button onclick="document.getElementById('wallImageInput').click()" style="width:auto; padding:8px 12px; font-size:11px; background:#334155;">📷 Add Photo</button>
-        <button onclick="createPost()" style="font-size:12px; flex:1;">Post to Wall</button>
+    <!-- FRIENDS APP WINDOW -->
+    <div class="os-window hidden" id="appFriends">
+      <div class="window-header">
+        <div class="window-dots"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+        <span>Nexus Network & Connections</span>
+        <span>👥</span>
       </div>
-      <div id="wallImagePreview" style="font-size:11px; color:#4ade80; margin-bottom:6px; display:none;">Image successfully attached!</div>
-      <div id="wallFeed" style="max-height:220px; overflow-y:auto; font-size:12px;"></div>
+      <div class="window-content">
+        <input type="text" id="friendInput" placeholder="Friend username..." style="font-size:11px;" autocomplete="off">
+        <button class="os-btn" onclick="sendFriendReq()" style="font-size:11px;">Send Connection Request</button>
+        <div id="friendNotifs" style="margin-top:12px; font-size:11px; color:#cbd5e1; display:flex; flex-direction:column; gap:6px;"></div>
+      </div>
     </div>
-
-    <!-- 4. PAYMENTS & REDEEM -->
-    <div id="secPay" class="box-section hidden">
-      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>BTC & ETH Wallets:</b></p>
-      <div style="font-size:11px;">BTC Wallet:</div>
-      <div class="wallet-box">${BTC_WALLET}</div>
-      <div style="font-size:11px;">ETH Wallet:</div>
-      <div class="wallet-box">${ETH_WALLET}</div>
-      
-      <select id="selectPlan" style="width:100%; padding:10px; background:#1e293b; color:#fff; border-radius:8px; border:none; margin:8px 0; font-size:12px;">
-        <option value="REAL">$8.99 = 4 Months REAL</option>
-        <option value="VIP">$16.99 = 8 Months VIP</option>
-        <option value="ONE_TIME">$28.99 = 12 Months Full</option>
-      </select>
-      
-      <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Generate Payment Code</button>
-      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.55); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate your unique redemption code.</div>
-      
-      <input type="text" id="redeemInput" placeholder="Redeem Code SEXCITES-XXXX" autocomplete="off">
-      <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Redeem VIP Months</button>
-    </div>
-
   </div>
 
+  <!-- OS DOCK -->
+  <div class="os-dock">
+    <div class="dock-icon active" onclick="switchApp('Wall')" title="Wall Feed">🌐</div>
+    <div class="dock-icon" onclick="switchApp('Chat')" title="Secure Chat">💬</div>
+    <div class="dock-icon" onclick="switchApp('Friends')" title="Connections">👥</div>
+  </div>
 </div>
 
 <script>
 const socket = io();
 let currentUser = null;
-let currentPeerId = null;
-let attachedWallImage = null;
-
-function createHeart() {
-  const container = document.getElementById('hearts');
-  if(!container) return;
-  const heart = document.createElement('div');
-  heart.className = 'heart';
-  const symbols = ['💖', '💗', '❤️', '🔥', '✨'];
-  heart.innerHTML = symbols[Math.floor(Math.random() * symbols.length)];
-  heart.style.left = Math.random() * 100 + 'vw';
-  heart.style.animationDuration = (4.5 + Math.random() * 4) + 's';
-  container.appendChild(heart);
-  setTimeout(() => { heart.remove(); }, 8000);
-}
-setInterval(createHeart, 350);
+let currentPeer = null;
+let wallImageBase64 = null;
 
 function toggleAuthMode(mode) {
-  document.getElementById('authError').innerText = '';
+  document.getElementById('authAlert').innerText = '';
   if(mode === 'login') {
-    document.getElementById('regForm').classList.add('hidden');
-    document.getElementById('logForm').classList.remove('hidden');
+    document.getElementById('regSpace').classList.add('hidden');
+    document.getElementById('logSpace').classList.remove('hidden');
   } else {
-    document.getElementById('logForm').classList.add('hidden');
-    document.getElementById('regForm').classList.remove('hidden');
+    document.getElementById('logSpace').classList.add('hidden');
+    document.getElementById('regSpace').classList.remove('hidden');
   }
 }
 
-function switchDashTab(tab) {
-  document.getElementById('secInbox').classList.add('hidden');
-  document.getElementById('secChat').classList.add('hidden');
-  document.getElementById('secWall').classList.add('hidden');
-  document.getElementById('secPay').classList.add('hidden');
-  
-  document.getElementById('tabBtnInbox').style.background = 'rgba(255,255,255,0.1)';
-  document.getElementById('tabBtnChat').style.background = 'rgba(255,255,255,0.1)';
-  document.getElementById('tabBtnWall').style.background = 'rgba(255,255,255,0.1)';
-  document.getElementById('tabBtnPay').style.background = 'rgba(255,255,255,0.1)';
-
-  if(tab === 'inbox') {
-    document.getElementById('secInbox').classList.remove('hidden');
-    document.getElementById('tabBtnInbox').style.background = 'rgba(255,255,255,0.2)';
-  }
-  if(tab === 'chat') {
-    document.getElementById('secChat').classList.remove('hidden');
-    document.getElementById('tabBtnChat').style.background = 'rgba(255,255,255,0.2)';
-  }
-  if(tab === 'wall') {
-    document.getElementById('secWall').classList.remove('hidden');
-    document.getElementById('tabBtnWall').style.background = 'rgba(255,255,255,0.2)';
-  }
-  if(tab === 'pay') {
-    document.getElementById('secPay').classList.remove('hidden');
-    document.getElementById('tabBtnPay').style.background = 'rgba(255,255,255,0.2)';
-  }
+function switchApp(appName) {
+  ['Wall', 'Chat', 'Friends'].forEach(app => {
+    document.getElementById('app' + app).classList.add('hidden');
+  });
+  document.getElementById('app' + appName).classList.remove('hidden');
+  document.querySelectorAll('.dock-icon').forEach(icon => icon.classList.remove('active'));
+  event.currentTarget.classList.add('active');
 }
 
 async function registerUser() {
   const username = document.getElementById('rUser').value;
   const password = document.getElementById('rPass').value;
-  const errorBox = document.getElementById('authError');
-  errorBox.innerText = '';
-
-  if(!username || !password) {
-    errorBox.innerText = 'Please enter a username and password.';
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/register', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username, password })
-    });
-    const data = await res.json();
-    if(data.success) {
-      if(data.isFreePromo) {
-        alert('Congratulations! Registration #' + data.totalCount + '. Your first 2 months are FREE!');
-      } else {
-        alert('Registration complete! The 0-500 free promo has ended. Please proceed to payment section.');
-      }
-      initUserSession(data.user);
-    } else {
-      errorBox.innerText = data.error;
-    }
-  } catch(e) {
-    errorBox.innerText = 'Connection error. Please try again.';
+  const res = await fetch('/api/register', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json();
+  if(data.success) {
+    bootOS(data.user);
+  } else {
+    document.getElementById('authAlert').innerText = data.error;
   }
 }
 
 async function loginUser() {
   const username = document.getElementById('lUser').value;
   const password = document.getElementById('lPass').value;
-  const errorBox = document.getElementById('authError');
-  errorBox.innerText = '';
-
-  if(!username || !password) {
-    errorBox.innerText = 'Please enter your username and password.';
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username, password })
-    });
-    const data = await res.json();
-    if(data.success) {
-      initUserSession(data.user);
-    } else {
-      errorBox.innerText = data.error;
-    }
-  } catch(e) {
-    errorBox.innerText = 'Connection error. Please try again.';
-  }
-}
-
-function initUserSession(user) {
-  currentUser = user;
-  document.getElementById('authView').classList.add('hidden');
-  document.getElementById('dashboardView').classList.remove('hidden');
-  document.getElementById('welcomeUser').innerText = '@' + user.username;
-  socket.emit('join', user.id);
-  loadPosts();
-}
-
-socket.on('friend:request-received', (data) => {
-  const box = document.getElementById('inboxList');
-  document.getElementById('noReq').style.display = 'none';
-  box.innerHTML += '<div style="margin-top:6px; background:rgba(255,255,255,0.05); padding:8px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;"><span>From: <b>@' + data.senderUsername + '</b></span> <button onclick="acceptRequest(\\'' + data.senderId + '\\', \\'' + data.senderUsername + '\\')" style="width:auto; padding:4px 10px; font-size:10px;">Accept</button></div>';
-});
-
-function sendFriendRequest() {
-  const targetUsername = document.getElementById('friendInput').value;
-  socket.emit('friend:request', { senderId: currentUser.id, targetUsername });
-  document.getElementById('friendInput').value = '';
-}
-
-function acceptRequest(senderId, senderUsername) {
-  socket.emit('friend:accept', { userId: currentUser.id, senderId });
-  alert('Request accepted! You can now chat with @' + senderUsername);
-  document.getElementById('msgPeerUsername').value = senderUsername;
-  switchDashTab('chat');
-  loadChatHistory();
-}
-
-function loadChatHistory() {
-  const peerUser = document.getElementById('msgPeerUsername').value.replace('@', '').trim().toLowerCase();
-  if(!peerUser) return alert('Enter a friend username');
-  socket.emit('chat:load-by-username', { userId: currentUser.id, peerUsername: peerUser });
-}
-
-socket.on('chat:loaded', (data) => {
-  currentPeerId = data.peerId;
-  const chatBox = document.getElementById('chatBox');
-  chatBox.innerHTML = '';
-  if(data.history.length === 0) {
-    chatBox.innerHTML = '<div style="color:#94a3b8; text-align:center;">No previous messages. Start chatting!</div>';
-    return;
-  }
-  data.history.forEach(m => renderMessageItem(m, data.peerUsername));
-  chatBox.scrollTop = chatBox.scrollHeight;
-});
-
-socket.on('chat:incoming', (data) => {
-  if(currentPeerId && (data.senderId === currentPeerId || data.senderId === currentUser.id)) {
-    renderMessageItem(data, document.getElementById('msgPeerUsername').value.replace('@',''));
-  }
-});
-
-function renderMessageItem(m, peerName) {
-  const chatBox = document.getElementById('chatBox');
-  const isMe = m.senderId === currentUser.id;
-  const senderLabel = isMe ? 'You' : '@' + peerName;
-  const color = isMe ? '#05d9e8' : '#ff2a6d';
-  
-  let content = m.text;
-  if(m.type === 'image') {
-    content = '<br><img src="' + m.text + '" style="max-width:140px; border-radius:8px; margin-top:4px;">';
-  }
-
-  chatBox.innerHTML += '<div style="margin-bottom:6px;"><b style="color:' + color + ';">' + senderLabel + ':</b> ' + content + '</div>';
-  chatBox.scrollTop = chatBox.scrollHeight;
-}
-
-function sendMessage() {
-  const text = document.getElementById('msgText').value;
-  if(!currentPeerId || !text) return alert('Load a chat history or type a message.');
-  socket.emit('chat:message', { senderId: currentUser.id, recipientId: currentPeerId, text, type: 'text' });
-  document.getElementById('msgText').value = '';
-}
-
-function sendPhoto(event) {
-  const file = event.target.files[0];
-  if(!file || !currentPeerId) return alert('Load a chat first before sending photos.');
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    socket.emit('chat:message', { senderId: currentUser.id, recipientId: currentPeerId, text: e.target.result, type: 'image' });
-  };
-  reader.readAsDataURL(file);
-}
-
-function previewWallImage(event) {
-  const file = event.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    attachedWallImage = e.target.result;
-    document.getElementById('wallImagePreview').style.display = 'block';
-  };
-  reader.readAsDataURL(file);
-}
-
-async function createPost() {
-  const text = document.getElementById('wallText').value;
-  if(!text && !attachedWallImage) return alert('Write something or attach an image.');
-
-  const res = await fetch('/api/post', {
+  const res = await fetch('/api/login', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ userId: currentUser.id, text, image: attachedWallImage })
+    body: JSON.stringify({ username, password })
   });
   const data = await res.json();
   if(data.success) {
-    document.getElementById('wallText').value = '';
-    attachedWallImage = null;
-    document.getElementById('wallImagePreview').style.display = 'none';
+    bootOS(data.user);
+  } else {
+    document.getElementById('authAlert').innerText = data.error;
   }
 }
 
-socket.on('new-post', (post) => {
-  renderSinglePost(post);
-});
+function bootOS(user) {
+  currentUser = user;
+  document.getElementById('osLockScreen').style.opacity = '0';
+  setTimeout(() => {
+    document.getElementById('osLockScreen').classList.add('hidden');
+    document.getElementById('osDesktop').classList.add('active');
+    document.getElementById('osUserDisplay').innerText = '@' + user.username;
+    socket.emit('join', user.username);
+    loadWallPosts();
+  }, 500);
+}
 
-socket.on('post-liked', (data) => {
-  const countSpan = document.getElementById('likes_count_' + data.postId);
-  if(countSpan) countSpan.innerText = data.likesCount;
-});
+function previewWallImg(e) {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt) { wallImageBase64 = evt.target.result; alert('Image attached successfully!'); };
+  reader.readAsDataURL(file);
+}
 
-socket.on('new-comment', (data) => {
-  const container = document.getElementById('comments_for_' + data.postId);
-  if(container) {
-    let imgHTML = data.comment.image ? '<br><img src="' + data.comment.image + '" style="max-width:120px; border-radius:6px; margin-top:3px;">' : '';
-    container.innerHTML += '<div style="margin-top:4px; padding:6px; background:rgba(0,0,0,0.25); border-radius:6px;"><b style="color:#05d9e8;">@' + data.comment.author + ':</b> ' + data.comment.text + imgHTML + '</div>';
-  }
-});
+function createPost() {
+  const text = document.getElementById('wallText').value;
+  if(!text && !wallImageBase64) return alert('Provide text or an image.');
+  socket.emit('post:create', { author: currentUser.username, text, image: wallImageBase64 });
+  document.getElementById('wallText').value = '';
+  wallImageBase64 = null;
+}
 
-async function loadPosts() {
-  const res = await fetch('/api/posts?userId=' + currentUser.id);
+async function loadWallPosts() {
+  const res = await fetch('/api/posts?username=' + currentUser.username);
   const data = await res.json();
   const feed = document.getElementById('wallFeed');
   feed.innerHTML = '';
   if(data.success) {
-    data.posts.forEach(p => renderSinglePost(p));
+    data.posts.forEach(p => renderPost(p));
   }
 }
 
-function renderSinglePost(p) {
+socket.on('post:new', (post) => {
+  renderPost(post);
+});
+
+function renderPost(p) {
   const feed = document.getElementById('wallFeed');
   const div = document.createElement('div');
-  div.id = 'post_' + p.id;
-  div.style.cssText = "background:rgba(255,255,255,0.03); padding:10px; border-radius:10px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.06);";
+  div.style.cssText = "background:rgba(255,255,255,0.03); padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.06);";
   
-  let imgHTML = p.image ? '<br><img src="' + p.image + '" style="max-width:100%; border-radius:8px; margin-top:6px;">' : '';
-  let likesCount = p.likesCount !== undefined ? p.likesCount : (p.likes ? p.likes.length : 0);
-  let hasLiked = p.userHasLiked !== undefined ? p.userHasLiked : (p.likes && p.likes.includes(currentUser.id));
-  let likeColor = hasLiked ? '#ff2a6d' : '#cbd5e1';
+  let imgHtml = p.image ? '<br><img src="' + p.image + '" style="max-width:100%; border-radius:8px; margin-top:6px;">' : '';
+  let likeColor = p.userHasLiked ? '#ff2a6d' : '#94a3b8';
 
-  let commentsHTML = '<div id="comments_for_' + p.id + '" style="margin-top:8px; padding-left:10px; border-left:2px solid rgba(255,42,109,0.4);">';
+  let commentsHtml = '<div id="comm_list_' + p.id + '" style="margin-top:8px; padding-left:10px; border-left:2px solid #ff2a6d; display:flex; flex-direction:column; gap:4px;">';
   if(p.comments) {
     p.comments.forEach(c => {
-      let cImg = c.image ? '<br><img src="' + c.image + '" style="max-width:120px; border-radius:6px; margin-top:3px;">' : '';
-      commentsHTML += '<div style="margin-top:4px; padding:6px; background:rgba(0,0,0,0.25); border-radius:6px;"><b style="color:#05d9e8;">@' + c.author + ':</b> ' + c.text + cImg + '</div>';
+      let cImg = c.image ? '<br><img src="' + c.image + '" style="max-width:90px; border-radius:4px;">' : '';
+      commentsHtml += '<div><b style="color:#05d9e8;">@' + c.author + ':</b> ' + c.text + cImg + '</div>';
     });
   }
-  commentsHTML += '</div>';
+  commentsHtml += '</div>';
 
   div.innerHTML = '<b style="color:#ff2a6d;">@' + p.author + '</b>' +
-                  '<p style="margin-top:2px; color:#e2e8f0;">' + p.text + '</p>' + imgHTML +
-                  '<div style="display:flex; gap:15px; margin-top:8px; font-size:11px;">' +
-                    '<button onclick="toggleLike(\\\'' + p.id + '\\\')" id="like_btn_' + p.id + '" style="width:auto; background:none; border:none; color:' + likeColor + '; cursor:pointer; padding:0; font-weight:600;">❤️ <span id="likes_count_' + p.id + '">' + likesCount + '</span> Likes</button>' +
-                    '<button onclick="sharePost(\\\'' + p.id + '\\\')" style="width:auto; background:none; border:none; color:#05d9e8; cursor:pointer; padding:0; font-weight:600;">🔗 Share</button>' +
+                  '<p style="color:#e2e8f0; margin-top:4px;">' + p.text + '</p>' + imgHtml +
+                  '<div style="display:flex; gap:16px; margin-top:8px; align-items:center;">' +
+                    '<button onclick="toggleLike(\x27' + p.id + '\x27)" style="width:auto; background:none; border:none; color:' + likeColor + '; cursor:pointer; font-size:11px;">❤️ <span id="likes_' + p.id + '">' + p.likesCount + '</span></button>' +
+                    '<button onclick="sharePost(\x27' + p.id + '\x27)" style="width:auto; background:none; border:none; color:#05d9e8; cursor:pointer; font-size:11px;">🔗 Share</button>' +
                   '</div>' +
-                  commentsHTML +
-                  '<div style="display:flex; gap:4px; margin-top:8px;">' +
-                    '<input type="text" id="reply_text_' + p.id + '" placeholder="Write a reply..." style="margin:0; font-size:11px; padding:6px;">' +
-                    '<input type="file" id="reply_img_' + p.id + '" accept="image/*" style="display:none;" onchange="handleReplyImage(event, \\\\'' + p.id + '\\\\')">' +
-                    '<button onclick="document.getElementById(\\\'reply_img_' + p.id + '\\\').click()" style="width:36px; margin:0; padding:0; background:#334155; font-size:12px;" title="Photo">📷</button>' +
-                    '<button onclick="sendComment(\\\'' + p.id + '\\\')" style="width:70px; margin:0; padding:6px; font-size:11px;">Reply</button>' +
+                  commentsHtml +
+                  '<div style="display:flex; gap:6px; margin-top:8px;">' +
+                    '<input type="text" id="comm_txt_' + p.id + '" placeholder="Write a reply..." style="margin:0; font-size:10px; padding:6px;">' +
+                    '<button class="os-btn" onclick="sendComment(\x27' + p.id + '\x27)" style="width:60px; margin:0; padding:6px; font-size:10px;">Reply</button>' +
                   '</div>';
-
   feed.prepend(div);
 }
 
-async function toggleLike(postId) {
-  const res = await fetch('/api/post/like', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ userId: currentUser.id, postId })
-  });
-  const data = await res.json();
-  if(data.success) {
-    const btn = document.getElementById('like_btn_' + postId);
-    if(data.liked) {
-      btn.style.styleFloat = '';
-      btn.style.color = '#ff2a6d';
-    } else {
-      btn.style.color = '#cbd5e1';
-    }
-  }
+function toggleLike(postId) {
+  socket.emit('post:like', { postId, username: currentUser.username });
 }
+
+socket.on('post:liked', (data) => {
+  const span = document.getElementById('likes_' + data.postId);
+  if(span) span.innerText = data.likesCount;
+});
 
 function sharePost(postId) {
   navigator.clipboard.writeText(window.location.origin + '#post-' + postId);
   alert('Post link copied to clipboard!');
 }
 
-const replyImages = {};
-function handleReplyImage(event, postId) {
-  const file = event.target.files[0];
-  if(!file) return;
+function sendComment(postId) {
+  const txtInput = document.getElementById('comm_txt_' + postId);
+  const text = txtInput.value;
+  if(!text) return;
+  socket.emit('post:comment', { postId, author: currentUser.username, text, image: null });
+  txtInput.value = '';
+}
+
+socket.on('post:commented', (data) => {
+  const list = document.getElementById('comm_list_' + data.postId);
+  if(list) {
+    list.innerHTML += '<div><b style="color:#05d9e8;">@' + data.comment.author + ':</b> ' + data.comment.text + '</div>';
+  }
+});
+
+function loadChat() {
+  const peer = document.getElementById('chatPeer').value.trim().toLowerCase().replace('@','');
+  if(!peer) return alert('Enter a valid username');
+  currentPeer = peer;
+  socket.emit('chat:load', { user1: currentUser.username, user2: peer });
+}
+
+socket.on('chat:history-loaded', (data) => {
+  const box = document.getElementById('chatBox');
+  box.innerHTML = '';
+  if(data.history.length === 0) {
+    box.innerHTML = '<div style="color:#64748b; text-align:center;">No recent dialogue with @' + data.peer + '</div>';
+    return;
+  }
+  data.history.forEach(m => renderMsg(m));
+  box.scrollTop = box.scrollHeight;
+});
+
+function sendChatMessage() {
+  const text = document.getElementById('msgText').value;
+  if(!currentPeer || !text) return alert('Open an active chat window and type a message.');
+  socket.emit('chat:message', { sender: currentUser.username, recipient: currentPeer, text, type: 'text' });
+  document.getElementById('msgText').value = '';
+}
+
+function sendChatPhoto(e) {
+  const file = e.target.files[0];
+  if(!file || !currentPeer) return alert('Select a recipient chat first.');
   const reader = new FileReader();
-  reader.onload = function(e) {
-    replyImages[postId] = e.target.result;
-    alert('Photo attached to reply!');
+  reader.onload = function(evt) {
+    socket.emit('chat:message', { sender: currentUser.username, recipient: currentPeer, text: evt.target.result, type: 'image' });
   };
   reader.readAsDataURL(file);
 }
 
-async function sendComment(postId) {
-  const textInput = document.getElementById('reply_text_' + postId);
-  const text = textInput.value;
-  const image = replyImages[postId] || null;
-
-  if(!text && !image) return alert('Write a reply or attach an image.');
-
-  const res = await fetch('/api/post/comment', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ userId: currentUser.id, postId, text, image })
-  });
-  const data = await res.json();
-  if(data.success) {
-    textInput.value = '';
-    delete replyImages[postId];
+socket.on('chat:incoming', (msg) => {
+  if(currentPeer && (msg.sender === currentPeer || msg.sender === currentUser.username)) {
+    renderMsg(msg);
   }
+});
+
+function renderMsg(m) {
+  const box = document.getElementById('chatBox');
+  const isMe = m.sender === currentUser.username;
+  const color = isMe ? '#05d9e8' : '#ff2a6d';
+  let content = m.text;
+  if(m.type === 'image') {
+    content = '<br><img src="' + m.text + '" style="max-width:140px; border-radius:6px; margin-top:4px;">';
+  }
+  box.innerHTML += '<div style="margin-bottom:6px;"><b style="color:' + color + ';">@' + m.sender + ':</b> ' + content + '</div>';
+  box.scrollTop = box.scrollHeight;
 }
 
-async function requestPaymentCode() {
-  const planType = document.getElementById('selectPlan').value;
-  const res = await fetch('/api/pay-request', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ userId: currentUser.id, planType })
-  });
-  const data = await res.json();
-  if(data.success) {
-    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Your Code: ' + data.hiddenCode + '</b>';
-  }
+function sendFriendReq() {
+  const target = document.getElementById('friendInput').value;
+  socket.emit('friend:request', { sender: currentUser.username, target });
+  document.getElementById('friendInput').value = '';
 }
 
-async function redeemCode() {
-  const code = document.getElementById('redeemInput').value;
-  const res = await fetch('/api/redeem', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ userId: currentUser.id, code })
-  });
-  const data = await res.json();
-  if(data.success) {
-    alert(data.message);
-    document.getElementById('badgeStatus').innerText = 'VIP Active';
-  } else {
-    alert(data.error);
-  }
-}
+socket.on('friend:request-received', (data) => {
+  document.getElementById('friendNotifs').innerHTML += '<div style="background:rgba(255,255,255,0.04); padding:8px; border-radius:8px;">New request from: <b>@' + data.sender + '</b></div>';
+});
+
+socket.on('error-msg', (data) => { alert(data.message); });
+socket.on('success-msg', (data) => { alert(data.message); });
 </script>
 </body>
 </html>`);
@@ -986,5 +725,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V20.0 running on port ' + PORT);
+  console.log('NEXUS OS Live Environment running on port ' + PORT);
 });

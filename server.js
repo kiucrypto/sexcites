@@ -40,12 +40,12 @@ app.post('/api/register', (req, res) => {
     const { username, email, password } = req.body;
     
     if (!username || username.trim().length < 2 || !password || password.trim().length < 3) {
-      return res.json({ success: false, error: 'Por favor ingresa un usuario y contraseña válidos.' });
+      return res.json({ success: false, error: 'Please enter a valid username and password.' });
     }
 
     const cleanUser = username.trim().toLowerCase().replace('@', '');
     if (usersByName.has(cleanUser)) {
-      return res.json({ success: false, error: 'Este nombre de usuario ya está en uso. Elige otro.' });
+      return res.json({ success: false, error: 'This username is already taken. Please choose another.' });
     }
 
     const userId = 'usr_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
@@ -66,7 +66,7 @@ app.post('/api/register', (req, res) => {
 
     res.json({ success: true, user: newUser });
   } catch (err) {
-    res.json({ success: false, error: 'Error en el servidor al registrar.' });
+    res.json({ success: false, error: 'Server error during registration.' });
   }
 });
 
@@ -76,7 +76,7 @@ app.post('/api/login', (req, res) => {
     const cleanId = (identifier || '').trim().toLowerCase().replace('@', '');
     
     if (!cleanId || !password) {
-      return res.json({ success: false, error: 'Por favor completa todos los campos.' });
+      return res.json({ success: false, error: 'Please complete all fields.' });
     }
 
     let userId = usersByName.get(cleanId);
@@ -91,23 +91,23 @@ app.post('/api/login', (req, res) => {
     }
 
     if (!userId) {
-      return res.json({ success: false, error: 'Usuario no encontrado. Regístrate primero.' });
+      return res.json({ success: false, error: 'User not found. Please register first.' });
     }
 
     const user = users.get(userId);
     if (user.password !== password) {
-      return res.json({ success: false, error: 'Contraseña incorrecta.' });
+      return res.json({ success: false, error: 'Incorrect password.' });
     }
 
     res.json({ success: true, user });
   } catch (err) {
-    res.json({ success: false, error: 'Error en el servidor al iniciar sesión.' });
+    res.json({ success: false, error: 'Server error during login.' });
   }
 });
 
 app.post('/api/pay-request', (req, res) => {
   const { userId, planType } = req.body;
-  if (!users.has(userId)) return res.json({ success: false, error: 'Usuario inválido.' });
+  if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
 
   let months = 4;
   if (planType === 'VIP') months = 8;
@@ -122,13 +122,13 @@ app.post('/api/pay-request', (req, res) => {
     success: true, 
     hiddenCode, 
     adminEmail: ADMIN_EMAIL,
-    message: 'Código generado. Envía tu comprobante a ' + ADMIN_EMAIL + ' junto con este código.' 
+    message: 'Code generated. Send your payment receipt to ' + ADMIN_EMAIL + ' along with this code.' 
   });
 });
 
 app.post('/api/redeem', (req, res) => {
   const { userId, code } = req.body;
-  if (!users.has(userId)) return res.json({ success: false, error: 'Usuario inválido.' });
+  if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
   
   const cleanCode = (code || '').trim().toUpperCase();
   let found = false;
@@ -147,20 +147,20 @@ app.post('/api/redeem', (req, res) => {
   }
 
   if (!found) {
-    return res.json({ success: false, error: 'Código inválido o ya canjeado.' });
+    return res.json({ success: false, error: 'Invalid or already redeemed code.' });
   }
 
   const user = users.get(userId);
   user.isFree = false;
   user.vipMonths = (user.vipMonths || 0) + targetMonths;
 
-  res.json({ success: true, message: '¡Código canjeado con éxito! VIP activado por ' + targetMonths + ' meses.' });
+  res.json({ success: true, message: 'Code successfully redeemed! VIP activated for ' + targetMonths + ' months.' });
 });
 
 app.post('/api/post', (req, res) => {
   const { userId, text, image } = req.body;
   const user = users.get(userId);
-  if (!user || (!text && !image)) return res.json({ success: false, error: 'Contenido vacío.' });
+  if (!user || (!text && !image)) return res.json({ success: false, error: 'Empty content.' });
 
   const newPost = {
     id: 'post_' + Date.now(),
@@ -183,7 +183,7 @@ app.post('/api/post/like', (req, res) => {
   const targetPost = posts.find(p => p.id === postId);
 
   if (!user || !targetPost) {
-    return res.json({ success: false, error: 'Acción no válida.' });
+    return res.json({ success: false, error: 'Invalid action.' });
   }
 
   const index = targetPost.likes.indexOf(userId);
@@ -206,7 +206,7 @@ app.post('/api/post/comment', (req, res) => {
   const targetPost = posts.find(p => p.id === postId);
 
   if (!user || !targetPost || (!text && !image)) {
-    return res.json({ success: false, error: 'Comentario vacío.' });
+    return res.json({ success: false, error: 'Empty comment.' });
   }
 
   const newComment = {
@@ -250,7 +250,7 @@ io.on('connection', (socket) => {
     
     const targetId = usersByName.get(cleanTarget);
     if (!targetId || targetId === senderId) {
-      socket.emit('error-msg', { message: 'El usuario no existe o no puedes agregarte a ti mismo.' });
+      socket.emit('error-msg', { message: 'User does not exist or you cannot add yourself.' });
       return;
     }
 
@@ -259,7 +259,7 @@ io.on('connection', (socket) => {
 
     const reqsMap = friendRequests.get(targetId);
     if (reqsMap.has(senderId)) {
-      socket.emit('error-msg', { message: 'Ya enviaste una solicitud a este usuario.' });
+      socket.emit('error-msg', { message: 'You already sent a request to this user.' });
       return;
     }
 
@@ -267,7 +267,7 @@ io.on('connection', (socket) => {
     reqsMap.set(senderId, requestObj);
 
     io.to(targetId).emit('friend:request-received', requestObj);
-    socket.emit('success-msg', { message: 'Solicitud enviada a @' + cleanTarget });
+    socket.emit('success-msg', { message: 'Request sent to @' + cleanTarget });
   });
 
   socket.on('friend:accept', (data) => {
@@ -289,7 +289,7 @@ io.on('connection', (socket) => {
     const cleanPeer = (peerUsername || '').replace('@', '').trim().toLowerCase();
     const peerId = usersByName.get(cleanPeer);
     if(!peerId) {
-      socket.emit('error-msg', { message: 'Usuario @' + cleanPeer + ' no encontrado.' });
+      socket.emit('error-msg', { message: 'User @' + cleanPeer + ' not found.' });
       return;
     }
     const chatId = getChatId(userId, peerId);
@@ -319,18 +319,18 @@ io.on('connection', (socket) => {
 // Front-End Interface
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SEXCITES.COM — Comunidad Privada 18+</title>
+<title>SEXCITES.COM — Private 18+ Community</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/socket.io/socket.io.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
 
 body {
-  background-color: #000000;
+  background: radial-gradient(circle at center, #1b001a 0%, #0d000f 40%, #000000 100%);
   color: #fff;
   min-height: 100vh;
   display: flex;
@@ -338,6 +338,34 @@ body {
   align-items: center;
   overflow-x: hidden;
   position: relative;
+}
+
+/* Striking Dynamic Background Glow Effects */
+body::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: -20%;
+  width: 70vw;
+  height: 70vw;
+  background: radial-gradient(circle, rgba(255, 42, 109, 0.25) 0%, transparent 70%);
+  z-index: 0;
+  animation: pulseGlow 8s ease-in-out infinite alternate;
+}
+body::after {
+  content: '';
+  position: absolute;
+  bottom: -20%;
+  right: -20%;
+  width: 70vw;
+  height: 70vw;
+  background: radial-gradient(circle, rgba(5, 217, 232, 0.2) 0%, transparent 70%);
+  z-index: 0;
+  animation: pulseGlow 10s ease-in-out infinite alternate-reverse;
+}
+@keyframes pulseGlow {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(1.2); opacity: 1; }
 }
 
 .hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: hidden; }
@@ -352,7 +380,7 @@ body {
   position: fixed;
   top: 15px;
   right: 15px;
-  background: rgba(12, 16, 38, 0.9);
+  background: rgba(12, 16, 38, 0.85);
   backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 42, 109, 0.5);
   padding: 6px 14px;
@@ -392,11 +420,11 @@ body { top: 0 !important; }
 .app-container {
   width: 100%;
   max-width: 480px;
-  background: rgba(10, 10, 15, 0.90);
+  background: rgba(15, 12, 22, 0.88);
   backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 42, 109, 0.25);
   border-radius: 24px;
-  box-shadow: 0 30px 60px rgba(0,0,0,0.95);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.95), 0 0 30px rgba(255, 42, 109, 0.15);
   z-index: 10;
   padding: 24px;
   margin: 15px;
@@ -472,14 +500,14 @@ button:active { transform: scale(0.98); }
 <body>
 
 <div class="translate-float">
-  <span class="translate-brand">SEXCITES Translate</span>
+  <span class="translate-brand">Language</span>
   <div id="google_translate_element"></div>
 </div>
 <script type="text/javascript">
   function googleTranslateElementInit() {
     new google.translate.TranslateElement({
-      pageLanguage: 'es',
-      includedLanguages: 'es,en,fr,de,pt,it,ru,ja,zh-CN,ar,hi',
+      pageLanguage: 'en',
+      includedLanguages: 'en,es,fr,de,pt,it,ru,ja,zh-CN,ar,hi',
       layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
       autoDisplay: false
     }, 'google_translate_element');
@@ -491,46 +519,46 @@ button:active { transform: scale(0.98); }
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Comunidad Privada 18+ • Tiempo Real V17.9</div>
+  <div class="subtitle">Private 18+ Community • Real-Time V17.9</div>
 
   <!-- AUTH VIEW -->
   <div id="authView">
     <div style="display:flex; gap:10px; margin-bottom:15px;">
-      <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.12)">Registrarse</button>
-      <button onclick="switchTab('log')" id="btnLogTab" style="background:transparent">Iniciar Sesión</button>
+      <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.12)">Register</button>
+      <button onclick="switchTab('log')" id="btnLogTab" style="background:transparent">Sign In</button>
     </div>
 
     <!-- REGISTER FORM -->
     <div id="regForm">
-      <div style="font-size:11px; color:#4ade80; margin-bottom:8px; text-align:center;">🔥 ¡Regístrate rápido y entra al sistema!</div>
-      <input type="text" id="rUser" placeholder="Usuario (ej. tu_nombre)" autocomplete="off">
-      <input type="email" id="rEmail" placeholder="Correo electrónico (Opcional)" autocomplete="off">
-      <input type="password" id="rPass" placeholder="Contraseña (Mínimo 3 caracteres)" autocomplete="off">
-      <button onclick="registerUser()">Crear Cuenta y Entrar</button>
+      <div style="font-size:11px; color:#4ade80; margin-bottom:8px; text-align:center;">🔥 Register quickly and enter the system!</div>
+      <input type="text" id="rUser" placeholder="Username (e.g. your_name)" autocomplete="off">
+      <input type="email" id="rEmail" placeholder="Email (Optional)" autocomplete="off">
+      <input type="password" id="rPass" placeholder="Password (Minimum 3 characters)" autocomplete="off">
+      <button onclick="registerUser()">Create Account & Enter</button>
     </div>
 
     <!-- SIGN IN FORM -->
     <div id="logForm" class="hidden">
-      <div style="font-size:11px; color:#05d9e8; margin-bottom:8px; text-align:center;">🔐 Inicia sesión con tu usuario y contraseña</div>
-      <input type="text" id="lUser" placeholder="Usuario o Correo" autocomplete="off">
-      <input type="password" id="lPass" placeholder="Contraseña" autocomplete="off">
-      <button onclick="loginUser()">Entrar al Sistema</button>
+      <div style="font-size:11px; color:#05d9e8; margin-bottom:8px; text-align:center;">🔐 Sign in with your username and password</div>
+      <input type="text" id="lUser" placeholder="Username or Email" autocomplete="off">
+      <input type="password" id="lPass" placeholder="Password" autocomplete="off">
+      <button onclick="loginUser()">Enter System</button>
     </div>
 
     <div id="authError" style="color:#f87171; font-size:12px; text-align:center; margin-top:10px; font-weight:600;"></div>
 
     <div class="founder-intro-box">
-      <h3>🚀 Gran Debut Oficial (06-09-2026)</h3>
-      <p>Bienvenido a <b>SEXCITES.com</b>. Comunidad segura con funciones en tiempo real y traductor integrado.</p>
-      <div class="founder-signature"><b>Jhon Gonzales (Fundador)</b></div>
+      <h3>🚀 Official Grand Debut (09-06-2026)</h3>
+      <p>Welcome to <b>SEXCITES.com</b>. Secure community with real-time features and integrated translator.</p>
+      <div class="founder-signature"><b>Jhon Gonzales (Founder)</b></div>
     </div>
 
     <div class="special-phrase-box">
-      ✨ "Darte una oportunidad en la vida nunca es tarde" ✨
+      ✨ "Giving yourself a chance in life is never too late" ✨
     </div>
 
     <div class="terms-footer">
-      Al registrarte aceptas nuestros <a href="#" onclick="alert('Términos y Condiciones: Plataforma exclusiva para mayores de 18 años.'); return false;">Términos y Condiciones</a>. © 2026 SEXCITES.com.
+      By registering you accept our <a href="#" onclick="alert('Terms & Conditions: Platform exclusive for adults 18+.'); return false;">Terms & Conditions</a>. © 2026 SEXCITES.com.
     </div>
 
   </div>
@@ -539,76 +567,76 @@ button:active { transform: scale(0.98); }
   <div id="dashboardView" class="hidden">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
       <span id="welcomeUser" style="font-weight:600; color:#05d9e8;"></span>
-      <span class="badge-free" id="badgeStatus">Acceso VIP Activo</span>
+      <span class="badge-free" id="badgeStatus">VIP Access Active</span>
     </div>
 
     <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:4px; margin-bottom:12px;">
-      <button onclick="switchDashTab('inbox')" id="tabBtnInbox" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.2)">Bandeja</button>
+      <button onclick="switchDashTab('inbox')" id="tabBtnInbox" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.2)">Inbox</button>
       <button onclick="switchDashTab('chat')" id="tabBtnChat" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Chat</button>
-      <button onclick="switchDashTab('wall')" id="tabBtnWall" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Muro</button>
-      <button onclick="switchDashTab('pay')" id="tabBtnPay" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Pagos</button>
+      <button onclick="switchDashTab('wall')" id="tabBtnWall" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Wall</button>
+      <button onclick="switchDashTab('pay')" id="tabBtnPay" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Payments</button>
     </div>
 
     <!-- 1. INBOX -->
     <div id="secInbox" class="box-section">
-      <p style="font-size:12px; margin-bottom:8px; color:#05d9e8;"><b>📥 Solicitudes y Amigos</b></p>
-      <input type="text" id="friendInput" placeholder="Añadir por usuario (ej: @nombre)" autocomplete="off">
-      <button onclick="sendFriendRequest()" style="margin-bottom:12px; font-size:12px;">Enviar Solicitud</button>
-      <div style="font-size:12px; color:#cbd5e1; margin-bottom:6px;"><b>Solicitudes Pendientes:</b></div>
+      <p style="font-size:12px; margin-bottom:8px; color:#05d9e8;"><b>📥 Requests & Friends</b></p>
+      <input type="text" id="friendInput" placeholder="Add by username (e.g: @name)" autocomplete="off">
+      <button onclick="sendFriendRequest()" style="margin-bottom:12px; font-size:12px;">Send Request</button>
+      <div style="font-size:12px; color:#cbd5e1; margin-bottom:6px;"><b>Pending Requests:</b></div>
       <div id="inboxList" style="background:rgba(0,0,0,0.45); border-radius:8px; padding:8px; max-height:140px; overflow-y:auto; font-size:12px;">
-        <span id="noReq" style="color:#94a3b8;">No hay solicitudes pendientes</span>
+        <span id="noReq" style="color:#94a3b8;">No pending requests</span>
       </div>
     </div>
 
     <!-- 2. LIVE CHAT -->
     <div id="secChat" class="box-section hidden">
-      <p style="font-size:12px; margin-bottom:8px; color:#ff2a6d;"><b>💬 Chat Directo y Fotos</b></p>
+      <p style="font-size:12px; margin-bottom:8px; color:#ff2a6d;"><b>💬 Direct Chat & Photos</b></p>
       <div style="display:flex; gap:6px; margin-bottom:8px;">
-        <input type="text" id="msgPeerUsername" placeholder="Usuario Amigo" autocomplete="off" style="margin:0;">
-        <button onclick="loadChatHistory()" style="width:110px; margin:0; font-size:11px;">Cargar Chat</button>
+        <input type="text" id="msgPeerUsername" placeholder="Friend Username" autocomplete="off" style="margin:0;">
+        <button onclick="loadChatHistory()" style="width:110px; margin:0; font-size:11px;">Load Chat</button>
       </div>
       <div id="chatBox" style="height:150px; background:rgba(0,0,0,0.45); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;">
-        <div style="color:#94a3b8; text-align:center; padding-top:40px;">Escribe el usuario arriba y carga el historial.</div>
+        <div style="color:#94a3b8; text-align:center; padding-top:40px;">Type the username above and load the history.</div>
       </div>
       <div style="display:flex; gap:6px;">
-        <input type="text" id="msgText" placeholder="Escribe un mensaje..." autocomplete="off" style="margin:0;">
+        <input type="text" id="msgText" placeholder="Type a message..." autocomplete="off" style="margin:0;">
         <input type="file" id="imageInput" accept="image/*" style="display:none;" onchange="sendPhoto(event)">
-        <button onclick="document.getElementById('imageInput').click()" style="width:45px; margin:0; background:#334155;" title="Enviar Foto">📷</button>
-        <button onclick="sendMessage()" style="width:70px; margin:0;">Enviar</button>
+        <button onclick="document.getElementById('imageInput').click()" style="width:45px; margin:0; background:#334155;" title="Send Photo">📷</button>
+        <button onclick="sendMessage()" style="width:70px; margin:0;">Send</button>
       </div>
     </div>
 
     <!-- 3. WALL SECTION -->
     <div id="secWall" class="box-section hidden">
-      <textarea id="wallText" placeholder="¿Qué estás pensando en SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
+      <textarea id="wallText" placeholder="What are you thinking on SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
       <div style="display:flex; gap:6px; margin-bottom:10px;">
         <input type="file" id="wallImageInput" accept="image/*" style="display:none;" onchange="previewWallImage(event)">
-        <button onclick="document.getElementById('wallImageInput').click()" style="width:auto; padding:8px 12px; font-size:11px; background:#334155;">📷 Añadir Foto</button>
-        <button onclick="createPost()" style="font-size:12px; flex:1;">Publicar en el Muro</button>
+        <button onclick="document.getElementById('wallImageInput').click()" style="width:auto; padding:8px 12px; font-size:11px; background:#334155;">📷 Add Photo</button>
+        <button onclick="createPost()" style="font-size:12px; flex:1;">Post to Wall</button>
       </div>
-      <div id="wallImagePreview" style="font-size:11px; color:#4ade80; margin-bottom:6px; display:none;">¡Imagen adjuntada con éxito!</div>
+      <div id="wallImagePreview" style="font-size:11px; color:#4ade80; margin-bottom:6px; display:none;">Image successfully attached!</div>
       <div id="wallFeed" style="max-height:220px; overflow-y:auto; font-size:12px;"></div>
     </div>
 
     <!-- 4. PAYMENTS & REDEEM -->
     <div id="secPay" class="box-section hidden">
-      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>BTC y ETH (Verificación Directa por Email):</b></p>
-      <div style="font-size:11px;">BTC Real:</div>
+      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>BTC & ETH (Direct Email Verification):</b></p>
+      <div style="font-size:11px;">Real BTC:</div>
       <div class="wallet-box">${BTC_WALLET}</div>
-      <div style="font-size:11px;">ETH Real:</div>
+      <div style="font-size:11px;">Real ETH:</div>
       <div class="wallet-box">${ETH_WALLET}</div>
       
       <select id="selectPlan" style="width:100%; padding:10px; background:#1e293b; color:#fff; border-radius:8px; border:none; margin:8px 0; font-size:12px;">
-        <option value="REAL">$8.99 = 4 Meses REAL</option>
-        <option value="VIP">$16.99 = 8 Meses VIP</option>
-        <option value="ONE_TIME">$28.99 = 12 Meses Full</option>
+        <option value="REAL">$8.99 = 4 Months REAL</option>
+        <option value="VIP">$16.99 = 8 Months VIP</option>
+        <option value="ONE_TIME">$28.99 = 12 Months Full</option>
       </select>
       
-      <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Obtener Código e Instrucciones</button>
-      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.55); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Haz clic arriba para generar tu código y enviar captura a po80payments@gmail.com</div>
+      <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Get Code & Instructions</button>
+      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.55); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate your code and send screenshot to po80payments@gmail.com</div>
       
-      <input type="text" id="redeemInput" placeholder="Canjear Código SEXCITES-XXXX" autocomplete="off">
-      <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Canjear Meses VIP</button>
+      <input type="text" id="redeemInput" placeholder="Redeem Code SEXCITES-XXXX" autocomplete="off">
+      <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Redeem VIP Months</button>
     </div>
 
   </div>
@@ -686,7 +714,7 @@ async function registerUser() {
   errorBox.innerText = '';
 
   if(!username || !password) {
-    errorBox.innerText = 'Ingresa usuario y contraseña.';
+    errorBox.innerText = 'Please enter username and password.';
     return;
   }
 
@@ -703,7 +731,7 @@ async function registerUser() {
       errorBox.innerText = data.error;
     }
   } catch(e) {
-    errorBox.innerText = 'Error de conexión. Inténtalo de nuevo.';
+    errorBox.innerText = 'Connection error. Please try again.';
   }
 }
 
@@ -714,7 +742,7 @@ async function loginUser() {
   errorBox.innerText = '';
 
   if(!identifier || !password) {
-    errorBox.innerText = 'Ingresa usuario y contraseña.';
+    errorBox.innerText = 'Please enter username and password.';
     return;
   }
 
@@ -731,7 +759,7 @@ async function loginUser() {
       errorBox.innerText = data.error;
     }
   } catch(e) {
-    errorBox.innerText = 'Error de conexión. Inténtalo de nuevo.';
+    errorBox.innerText = 'Connection error. Please try again.';
   }
 }
 
@@ -747,7 +775,7 @@ function initUserSession(user) {
 socket.on('friend:request-received', (data) => {
   const box = document.getElementById('inboxList');
   document.getElementById('noReq').style.display = 'none';
-  box.innerHTML += '<div style="margin-top:6px; background:rgba(255,255,255,0.05); padding:8px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;"><span>De: <b>@' + data.senderUsername + '</b></span> <button onclick="acceptRequest(\\'' + data.senderId + '\\', \\'' + data.senderUsername + '\\')" style="width:auto; padding:4px 10px; font-size:10px;">Aceptar</button></div>';
+  box.innerHTML += '<div style="margin-top:6px; background:rgba(255,255,255,0.05); padding:8px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;"><span>From: <b>@' + data.senderUsername + '</b></span> <button onclick="acceptRequest(\\'' + data.senderId + '\\', \\'' + data.senderUsername + '\\')" style="width:auto; padding:4px 10px; font-size:10px;">Accept</button></div>';
 });
 
 function sendFriendRequest() {
@@ -758,7 +786,7 @@ function sendFriendRequest() {
 
 function acceptRequest(senderId, senderUsername) {
   socket.emit('friend:accept', { userId: currentUser.id, senderId });
-  alert('¡Solicitud aceptada! Ya puedes chatear con @' + senderUsername);
+  alert('Request accepted! You can now chat with @' + senderUsername);
   document.getElementById('msgPeerUsername').value = senderUsername;
   switchDashTab('chat');
   loadChatHistory();
@@ -766,7 +794,7 @@ function acceptRequest(senderId, senderUsername) {
 
 function loadChatHistory() {
   const peerUser = document.getElementById('msgPeerUsername').value.replace('@', '').trim().toLowerCase();
-  if(!peerUser) return alert('Ingresa el usuario de un amigo');
+  if(!peerUser) return alert('Enter a friend username');
   socket.emit('chat:load-by-username', { userId: currentUser.id, peerUsername: peerUser });
 }
 
@@ -775,7 +803,7 @@ socket.on('chat:loaded', (data) => {
   const chatBox = document.getElementById('chatBox');
   chatBox.innerHTML = '';
   if(data.history.length === 0) {
-    chatBox.innerHTML = '<div style="color:#94a3b8; text-align:center;">No hay mensajes previos. ¡Empieza a chatear!</div>';
+    chatBox.innerHTML = '<div style="color:#94a3b8; text-align:center;">No previous messages. Start chatting!</div>';
     return;
   }
   data.history.forEach(m => renderMessageItem(m, data.peerUsername));
@@ -791,7 +819,7 @@ socket.on('chat:incoming', (data) => {
 function renderMessageItem(m, peerName) {
   const chatBox = document.getElementById('chatBox');
   const isMe = m.senderId === currentUser.id;
-  const senderLabel = isMe ? 'Tú' : '@' + peerName;
+  const senderLabel = isMe ? 'You' : '@' + peerName;
   const color = isMe ? '#05d9e8' : '#ff2a6d';
   
   let content = m.text;
@@ -805,14 +833,14 @@ function renderMessageItem(m, peerName) {
 
 function sendMessage() {
   const text = document.getElementById('msgText').value;
-  if(!currentPeerId || !text) return alert('Carga el historial de un chat o escribe un mensaje.');
+  if(!currentPeerId || !text) return alert('Load a chat history or type a message.');
   socket.emit('chat:message', { senderId: currentUser.id, recipientId: currentPeerId, text, type: 'text' });
   document.getElementById('msgText').value = '';
 }
 
 function sendPhoto(event) {
   const file = event.target.files[0];
-  if(!file || !currentPeerId) return alert('Carga un chat primero antes de enviar fotos.');
+  if(!file || !currentPeerId) return alert('Load a chat first before sending photos.');
   const reader = new FileReader();
   reader.onload = function(e) {
     socket.emit('chat:message', { senderId: currentUser.id, recipientId: currentPeerId, text: e.target.result, type: 'image' });
@@ -833,7 +861,7 @@ function previewWallImage(event) {
 
 async function createPost() {
   const text = document.getElementById('wallText').value;
-  if(!text && !attachedWallImage) return alert('Escribe algo o adjunta una imagen.');
+  if(!text && !attachedWallImage) return alert('Write something or attach an image.');
 
   const res = await fetch('/api/post', {
     method: 'POST',
@@ -898,15 +926,15 @@ function renderSinglePost(p) {
   div.innerHTML = '<b style="color:#ff2a6d;">@' + p.author + '</b>' +
                   '<p style="margin-top:2px; color:#e2e8f0;">' + p.text + '</p>' + imgHTML +
                   '<div style="display:flex; gap:15px; margin-top:8px; font-size:11px;">' +
-                    '<button onclick="toggleLike(\\\'' + p.id + '\\\')" id="like_btn_' + p.id + '" style="width:auto; background:none; border:none; color:' + likeColor + '; cursor:pointer; padding:0; font-weight:600;">❤️ <span id="likes_count_' + p.id + '">' + likesCount + '</span> Me gusta</button>' +
-                    '<button onclick="sharePost(\\\'' + p.id + '\\\')" style="width:auto; background:none; border:none; color:#05d9e8; cursor:pointer; padding:0; font-weight:600;">🔗 Compartir</button>' +
+                    '<button onclick="toggleLike(\\\'' + p.id + '\\\')" id="like_btn_' + p.id + '" style="width:auto; background:none; border:none; color:' + likeColor + '; cursor:pointer; padding:0; font-weight:600;">❤️ <span id="likes_count_' + p.id + '">' + likesCount + '</span> Likes</button>' +
+                    '<button onclick="sharePost(\\\'' + p.id + '\\\')" style="width:auto; background:none; border:none; color:#05d9e8; cursor:pointer; padding:0; font-weight:600;">🔗 Share</button>' +
                   '</div>' +
                   commentsHTML +
                   '<div style="display:flex; gap:4px; margin-top:8px;">' +
-                    '<input type="text" id="reply_text_' + p.id + '" placeholder="Escribe respuesta..." style="margin:0; font-size:11px; padding:6px;">' +
+                    '<input type="text" id="reply_text_' + p.id + '" placeholder="Write a reply..." style="margin:0; font-size:11px; padding:6px;">' +
                     '<input type="file" id="reply_img_' + p.id + '" accept="image/*" style="display:none;" onchange="handleReplyImage(event, \\\\'' + p.id + '\\\\')">' +
-                    '<button onclick="document.getElementById(\\\'reply_img_' + p.id + '\\\').click()" style="width:36px; margin:0; padding:0; background:#334155; font-size:12px;" title="Foto">📷</button>' +
-                    '<button onclick="sendComment(\\\'' + p.id + '\\\')" style="width:70px; margin:0; padding:6px; font-size:11px;">Responder</button>' +
+                    '<button onclick="document.getElementById(\\\'reply_img_' + p.id + '\\\').click()" style="width:36px; margin:0; padding:0; background:#334155; font-size:12px;" title="Photo">📷</button>' +
+                    '<button onclick="sendComment(\\\'' + p.id + '\\\')" style="width:70px; margin:0; padding:6px; font-size:11px;">Reply</button>' +
                   '</div>';
 
   feed.prepend(div);
@@ -931,7 +959,7 @@ async function toggleLike(postId) {
 
 function sharePost(postId) {
   navigator.clipboard.writeText(window.location.origin + '#post-' + postId);
-  alert('¡Enlace de la publicación copiado al portapapeles!');
+  alert('Post link copied to clipboard!');
 }
 
 const replyImages = {};
@@ -941,7 +969,7 @@ function handleReplyImage(event, postId) {
   const reader = new FileReader();
   reader.onload = function(e) {
     replyImages[postId] = e.target.result;
-    alert('¡Foto adjuntada a la respuesta!');
+    alert('Photo attached to reply!');
   };
   reader.readAsDataURL(file);
 }
@@ -951,7 +979,7 @@ async function sendComment(postId) {
   const text = textInput.value;
   const image = replyImages[postId] || null;
 
-  if(!text && !image) return alert('Escribe una respuesta o adjunta una imagen.');
+  if(!text && !image) return alert('Write a reply or attach an image.');
 
   const res = await fetch('/api/post/comment', {
     method: 'POST',
@@ -972,9 +1000,9 @@ async function requestPaymentCode() {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ userId: currentUser.id, planType })
   });
-  const data = acid = await res.json();
+  const data = await res.json();
   if(data.success) {
-    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Código: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Envía captura a ' + data.adminEmail + '</span>';
+    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Code: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Send screenshot to ' + data.adminEmail + '</span>';
   }
 }
 
@@ -988,7 +1016,7 @@ async function redeemCode() {
   const data = await res.json();
   if(data.success) {
     alert(data.message);
-    document.getElementById('badgeStatus').innerText = 'VIP Activo';
+    document.getElementById('badgeStatus').innerText = 'VIP Active';
   } else {
     alert(data.error);
   }

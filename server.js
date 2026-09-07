@@ -35,7 +35,7 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V17.9 LIVE & FULLY OPERATIONAL');
+  res.status(200).send('SEXCITES.COM V19.0 LIVE & FULLY OPERATIONAL');
 });
 
 app.post('/api/register', (req, res) => {
@@ -593,13 +593,14 @@ button:active { transform: scale(0.98); }
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private 18+ Community • Real-Time V17.9</div>
+  <div class="subtitle">Private 18+ Community • Real-Time V19.0</div>
 
-  <!-- AUTH VIEW (Mandatory Registration First / Sequential Flow) -->
+  <!-- AUTH VIEW (Separate Registration & Sign In Views) -->
   <div id="authView">
     
-    <!-- REGISTER VIEW (Default Obligatory Step 1) -->
+    <!-- REGISTER VIEW -->
     <div id="regForm">
+      <div style="font-size:12px; color:#05d9e8; margin-bottom:8px; text-align:center; font-weight:700;">📝 New Member Registration</div>
       <div class="promo-banner">
         🔥 PROMO (0 - 500): First 2 months completely FREE! Strictly 1 account per phone device.
       </div>
@@ -610,19 +611,20 @@ button:active { transform: scale(0.98); }
       <button onclick="registerUser()">Register & Claim Free Access</button>
       
       <div class="switch-link">
-        Already a member? <span onclick="toggleAuthMode('login')">Sign In here</span>
+        Already registered? <span onclick="toggleAuthMode('login')">Switch to Sign In</span>
       </div>
     </div>
 
-    <!-- SIGN IN VIEW (For already registered members) -->
+    <!-- SIGN IN VIEW -->
     <div id="logForm" class="hidden">
-      <div style="font-size:11px; color:#05d9e8; margin-bottom:8px; text-align:center;">🔐 Sign in with your username/email and password</div>
+      <div style="font-size:12px; color:#ff2a6d; margin-bottom:8px; text-align:center; font-weight:700;">🔐 Member Sign In</div>
+      <div style="font-size:11px; color:#a5b4fc; margin-bottom:12px; text-align:center;">Welcome back! Enter your login details below to access your account.</div>
       <input type="text" id="lUser" placeholder="Username or Email" autocomplete="off">
       <input type="password" id="lPass" placeholder="Password" autocomplete="off">
-      <button onclick="loginUser()">Sign In to System</button>
+      <button onclick="loginUser()">Sign In to Dashboard</button>
       
       <div class="switch-link">
-        New here? <span onclick="toggleAuthMode('register')">Register for 0-500 promo</span>
+        Don't have an account? <span onclick="toggleAuthMode('register')">Switch to Register</span>
       </div>
     </div>
 
@@ -721,6 +723,15 @@ button:active { transform: scale(0.98); }
     </div>
 
   </div>
+
+  <!-- PLATFORM DESCRIPTION & MODERN UPDATES SECTION (Bottom Info Box) -->
+  <div style="margin-top:20px; padding:14px; background:rgba(12,16,38,0.7); border:1px solid rgba(5,217,232,0.3); border-radius:14px; font-size:11px; color:#94a3b8; line-height:1.5;">
+    <h4 style="color:#05d9e8; font-size:12px; margin-bottom:6px; font-weight:700;">🌟 System Architecture & Modern Updates (V19.0)</h4>
+    <p style="margin-bottom:6px;"><b>High-Performance Core:</b> Built with Node.js, Express, and WebSockets for lightning-fast 24/7 real-time messaging, walls, and instant authentication.</p>
+    <p style="margin-bottom:6px;"><b>Security & Compliance:</b> Strict device fingerprinting allowing 1 account per phone device, paired with automated email proof verification (${ADMIN_EMAIL}).</p>
+    <p><b>Global Accessibility:</b> Integrated multi-language translation toolbar, high-speed memory maps, and immersive dynamic motion background animations.</p>
+  </div>
+
 </div>
 
 <script>
@@ -1094,7 +1105,7 @@ async function redeemCode() {
   const res = await fetch('/api/redeem', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ userId: currentUser.id, code })
+    body: JSON.identity ? {} : JSON.stringify({ userId: currentUser.id, code })
   });
   const data = await res.json();
   if(data.success) {
@@ -1111,5 +1122,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V17.9 running on port ' + PORT);
+  console.log('SEXCITES.COM V19.0 running on port ' + PORT);
 });

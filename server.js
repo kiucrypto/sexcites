@@ -1,7 +1,6 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -15,11 +14,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // ==========================================
 const users = new Map();          // id -> userObj
 const usersByName = new Map();    // username -> id
-const devices = new Map();        // deviceKey -> userId (1 account per device - anti multi-account)
+const devices = new Map();        // deviceKey -> userId (Anti multi-account protection)
 const friends = new Map();        // userId -> Set(friendIds)
 const friendRequests = new Map(); // userId -> Map(senderId -> requestObj)
 const messages = new Map();       // chatId -> [ {senderId, text, type, timestamp} ]
-const posts = [];                 // [ {id, author, text, timestamp, likes} ]
+const posts = [];                 // [ {id, author, text, image, timestamp, likes: Set(), comments: []} ]
 const userCodes = new Map();      // userId -> [ {code, plan, months, used} ]
 
 const BTC_WALLET = "bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s";
@@ -35,7 +34,7 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V13 LIVE & FULLY OPERATIONAL');
+  res.status(200).send('SEXCITES.COM V15 LIVE & FULLY OPERATIONAL');
 });
 
 // Strict registration: 1 device = 1 account + 500 Free Limit Blocker (501+ requires payment first)
@@ -111,7 +110,7 @@ app.post('/api/login', (req, res) => {
   res.json({ success: true, user });
 });
 
-// Request payment code with 4 months extra bonus guarantee if delayed
+// Request payment code
 app.post('/api/pay-request', (req, res) => {
   const { userId, planType } = req.body;
   if (!users.has(userId)) return res.json({ success: false, error: 'Invalid user.' });
@@ -129,7 +128,7 @@ app.post('/api/pay-request', (req, res) => {
     success: true, 
     hiddenCode, 
     adminEmail: ADMIN_EMAIL,
-    message: 'Reference generated. Send your payment screenshot to ' + ADMIN_EMAIL + ' with this code. If the system delays, we will add 4 extra months free to your welcome package!' 
+    message: 'Reference generated. Send your payment screenshot to ' + ADMIN_EMAIL + ' with this code.' 
   });
 });
 
@@ -165,35 +164,90 @@ app.post('/api/redeem', (req, res) => {
   res.json({ success: true, message: 'Code successfully redeemed! VIP activated for ' + targetMonths + ' months.' });
 });
 
-// Post on SEXCITES Wall
+// Wall Post Creation
 app.post('/api/post', (req, res) => {
-  const { userId, text } = req.body;
+  const { userId, text, image } = req.body;
   const user = users.get(userId);
-  if (!user || !text) return res.json({ success: false, error: 'Unauthorized or empty text.' });
+  if (!user || (!text && !image)) return res.json({ success: false, error: 'Unauthorized or empty content.' });
 
   const newPost = {
     id: 'post_' + Date.now(),
     author: user.username,
-    text: text.trim(),
+    text: text ? text.trim() : '',
+    image: image || null,
     timestamp: Date.now(),
-    likes: 0
+    likes: [], // Array of userIds who liked
+    comments: []
   };
 
   posts.unshift(newPost);
-  io.emit('new-post', newPost);
+  // Send sanitized post structure for client rendering
+  io.emit('new-post', { ...newPost, likesCount: 0, userHasLiked: false });
   res.json({ success: true, post: newPost });
 });
 
+// Wall Post Like Toggle
+app.post('/api/post/like', (req, res) => {
+  const { userId, postId } = req.body;
+  const user = users.get(userId);
+  const targetPost = posts.find(p => p.id === postId);
+
+  if (!user || !targetPost) {
+    return res.json({ success: false, error: 'Invalid user or post.' });
+  }
+
+  const index = targetPost.likes.indexOf(userId);
+  let liked = false;
+  if (index === -1) {
+    targetPost.likes.push(userId);
+    liked = true;
+  } else {
+    targetPost.likes.splice(index, 1);
+    liked = false;
+  }
+
+  io.emit('post-liked', { postId, likesCount: targetPost.likes.length });
+  res.json({ success: true, liked, likesCount: targetPost.likes.length });
+});
+
+// Wall Comment / Reply Creation
+app.post('/api/post/comment', (req, res) => {
+  const { userId, postId, text, image } = req.body;
+  const user = users.get(userId);
+  const targetPost = posts.find(p => p.id === postId);
+
+  if (!user || !targetPost || (!text && !image)) {
+    return res.json({ success: false, error: 'Invalid post or empty comment.' });
+  }
+
+  const newComment = {
+    id: 'comm_' + Date.now(),
+    author: user.username,
+    text: text ? text.trim() : '',
+    image: image || null,
+    timestamp: Date.now()
+  };
+
+  targetPost.comments.push(newComment);
+  io.emit('new-comment', { postId, comment: newComment });
+  res.json({ success: true, comment: newComment });
+});
+
 app.get('/api/posts', (req, res) => {
-  res.json({ success: true, posts });
+  const userId = req.query.userId || '';
+  const formattedPosts = posts.map(p => ({
+    ...p,
+    likesCount: p.likes.length,
+    userHasLiked: p.likes.includes(userId)
+  }));
+  res.json({ success: true, posts: formattedPosts });
 });
 
 // ==========================================
-// SOCKET.IO — REAL-TIME 0.1s (Live messaging, photos & friends)
+// SOCKET.IO — REAL-TIME 0.1s
 // ==========================================
 io.on('connection', (socket) => {
   let currentUserId = null;
-
   socket.join = socket.join.bind(socket);
 
   socket.on('join', (userId) => {
@@ -233,7 +287,6 @@ io.on('connection', (socket) => {
     
     if (reqsMap && reqsMap.has(senderId)) {
       reqsMap.delete(senderId);
-      
       friends.get(userId).add(senderId);
       friends.get(senderId).add(userId);
 
@@ -269,13 +322,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    if (currentUserId) {
-      socket.leave(currentUserId);
-    }
+    if (currentUserId) socket.leave(currentUserId);
   });
 });
 
-// Serve Front-End Web Interface (Fully in English, custom branded Tradutor Sexsites)
+// Front-End Interface with SEXCITES 24/7 Translation & Full Wall Interactivity (Likes, Comments, Share)
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -304,15 +355,15 @@ body {
   100% { transform: translateY(-110vh) scale(1.2); opacity: 0; }
 }
 
-/* CUSTOM BRANDED TRANSLATE WIDGET: Tradutor Sexsites */
+/* SEXCITES 24/7 CUSTOM TRANSLATE WIDGET */
 .translate-float {
   position: fixed;
   top: 15px;
   right: 15px;
-  background: rgba(18, 22, 48, 0.9);
+  background: rgba(18, 22, 48, 0.95);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 117, 140, 0.5);
-  padding: 6px 12px;
+  border: 1px solid rgba(255, 117, 140, 0.6);
+  padding: 6px 14px;
   border-radius: 30px;
   box-shadow: 0 4px 20px rgba(255, 117, 140, 0.4);
   z-index: 9999;
@@ -336,7 +387,7 @@ body {
   text-transform: uppercase;
   white-space: nowrap;
 }
-/* Completely hide Google native branding and labels */
+/* Completely hide Google native elements & maintain clean SEXCITES UI */
 .goog-te-banner-frame { display: none !important; }
 .goog-logo-link { display: none !important; }
 .goog-te-gadget { color: transparent !important; font-size: 0 !important; }
@@ -355,8 +406,8 @@ body { top: 0 !important; }
 
 .app-container {
   width: 100%;
-  max-width: 460px;
-  background: rgba(18, 22, 48, 0.75);
+  max-width: 480px;
+  background: rgba(18, 22, 48, 0.78);
   backdrop-filter: blur(22px) saturate(150%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 24px;
@@ -401,19 +452,19 @@ button:active { transform: scale(0.98); }
 </head>
 <body>
 
-<!-- CUSTOM BRANDED TRADUCTOR SEXCITES WIDGET -->
+<!-- SEXCITES 24/7 CUSTOM TRANSLATE WIDGET -->
 <div class="translate-float">
-  <span class="translate-brand">Traductor Sexsites</span>
+  <span class="translate-brand">SEXCITES Translate</span>
   <div id="google_translate_element"></div>
 </div>
 <script type="text/javascript">
-  function sexcitesTranslateElementInit() {
+  function googleTranslateElementInit() {
     new google.translate.TranslateElement({
       pageLanguage: 'en',
       includedLanguages: 'es,en,fr,de,pt,it,ru,ja,zh-CN,ar,hi',
-      layout: .sexcites translate.TranslateElement.InlineLayout.SIMPLE,
+      layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
       autoDisplay: false
-    }, 'sexcites_translate_element');
+    }, 'google_translate_element');
   }
 </script>
 <script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
@@ -422,9 +473,9 @@ button:active { transform: scale(0.98); }
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private Community 18+ • Real-Time V13</div>
+  <div class="subtitle">Private Community 18+ • Real-Time V15</div>
 
-  <!-- VIEW: LOGIN / REGISTER -->
+  <!-- AUTH VIEW -->
   <div id="authView">
     <div style="display:flex; gap:10px; margin-bottom:15px;">
       <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.1)">Register</button>
@@ -433,28 +484,27 @@ button:active { transform: scale(0.98); }
 
     <div id="regForm">
       <div style="font-size:11px; color:#4ade80; margin-bottom:8px; text-align:center;">🔥 Users 1 to 500 get 2 Months Free! (501+ Locked & Requires Payment)</div>
-      <input type="text" id="rUser" placeholder="Username (@example)" autocomplete="off" autocorrect="off" spellcheck="false">
-      <input type="email" id="rEmail" placeholder="Email address (Optional)" autocomplete="off" autocorrect="off" spellcheck="false">
-      <input type="password" id="rPass" placeholder="Password (Minimum 4 chars)" autocomplete="off" autocorrect="off" spellcheck="false">
+      <input type="text" id="rUser" placeholder="Username (@example)" autocomplete="off">
+      <input type="email" id="rEmail" placeholder="Email address (Optional)" autocomplete="off">
+      <input type="password" id="rPass" placeholder="Password (Minimum 4 chars)" autocomplete="off">
       <button onclick="registerUser()">Create Account (1 Device Block)</button>
     </div>
 
     <div id="logForm" class="hidden">
-      <input type="text" id="lUser" placeholder="Username or Email" autocomplete="off" autocorrect="off" spellcheck="false">
-      <input type="password" id="lPass" placeholder="Password" autocomplete="off" autocorrect="off" spellcheck="false">
+      <input type="text" id="lUser" placeholder="Username or Email" autocomplete="off">
+      <input type="password" id="lPass" placeholder="Password" autocomplete="off">
       <button onclick="loginUser()">Enter System</button>
     </div>
     <div id="authError" style="color:#f87171; font-size:12px; text-align:center; margin-top:10px;"></div>
   </div>
 
-  <!-- VIEW: MAIN DASHBOARD -->
+  <!-- DASHBOARD VIEW -->
   <div id="dashboardView" class="hidden">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
       <span id="welcomeUser" style="font-weight:600; color:#38bdf8;"></span>
       <span class="badge-free" id="badgeStatus">2 Months Free Active</span>
     </div>
 
-    <!-- INTERNAL TABS -->
     <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:4px; margin-bottom:12px;">
       <button onclick="switchDashTab('inbox')" id="tabBtnInbox" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.2)">Inbox</button>
       <button onclick="switchDashTab('chat')" id="tabBtnChat" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Live Chat</button>
@@ -462,44 +512,48 @@ button:active { transform: scale(0.98); }
       <button onclick="switchDashTab('pay')" id="tabBtnPay" style="font-size:11px; padding:6px; background:rgba(255,255,255,0.1)">Payments</button>
     </div>
 
-    <!-- 1. INBOX & MESSAGES BUZON SECTION -->
+    <!-- 1. INBOX -->
     <div id="secInbox" class="box-section">
       <p style="font-size:12px; margin-bottom:8px; color:#38bdf8;"><b>📥 Message & Request Inbox</b></p>
-      <input type="text" id="friendInput" placeholder="Add friend by username (ex: @lenoxjg ✓ )" autocomplete="off" autocorrect="off" spellcheck="false">
+      <input type="text" id="friendInput" placeholder="Add friend by username (ex: @lenoxjg)" autocomplete="off">
       <button onclick="sendFriendRequest()" style="margin-bottom:12px; font-size:12px;">Send Friend Request</button>
-      
       <div style="font-size:12px; color:#cbd5e1; margin-bottom:6px;"><b>Pending Friend Requests:</b></div>
       <div id="inboxList" style="background:rgba(0,0,0,0.3); border-radius:8px; padding:8px; max-height:140px; overflow-y:auto; font-size:12px;">
         <span id="noReq" style="color:#94a3b8;">No pending requests</span>
       </div>
     </div>
 
-    <!-- 2. LIVE CHAT SECTION (Supports Real-Time Messages & Photos) -->
+    <!-- 2. LIVE CHAT -->
     <div id="secChat" class="box-section hidden">
       <p style="font-size:12px; margin-bottom:8px; color:#ff758c;"><b>💬 Live Direct Chat & Photos</b></p>
       <div style="display:flex; gap:6px; margin-bottom:8px;">
-        <input type="text" id="msgPeerUsername" placeholder="Friend Username (ex: @user)" autocomplete="off" autocorrect="off" spellcheck="false" style="margin:0;">
+        <input type="text" id="msgPeerUsername" placeholder="Friend Username (ex: @user)" autocomplete="off" style="margin:0;">
         <button onclick="loadChatHistory()" style="width:110px; margin:0; font-size:11px;">Load History</button>
       </div>
       <div id="chatBox" style="height:150px; background:rgba(0,0,0,0.3); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;">
-        <div style="color:#94a3b8; text-align:center; padding-top:40px;">Enter friend username above & load history to start chatting live.</div>
+        <div style="color:#94a3b8; text-align:center; padding-top:40px;">Enter friend username above & load history.</div>
       </div>
       <div style="display:flex; gap:6px;">
-        <input type="text" id="msgText" placeholder="Type message or paste image..." autocomplete="off" autocorrect="off" spellcheck="false" style="margin:0;">
+        <input type="text" id="msgText" placeholder="Type message..." autocomplete="off" style="margin:0;">
         <input type="file" id="imageInput" accept="image/*" style="display:none;" onchange="sendPhoto(event)">
         <button onclick="document.getElementById('imageInput').click()" style="width:45px; margin:0; background:#334155;" title="Send Photo">📷</button>
         <button onclick="sendMessage()" style="width:70px; margin:0;">Send</button>
       </div>
     </div>
 
-    <!-- 3. WALL SECTION -->
+    <!-- 3. WALL SECTION (Interactive Posts, Likes, Comments, Photos & Share) -->
     <div id="secWall" class="box-section hidden">
-      <textarea id="wallText" placeholder="What's on your mind on SEXCITES.COM?" style="width:100%; height:60px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:8px; outline:none;" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
-      <button onclick="createPost()" style="font-size:12px; margin-bottom:10px;">Post to Wall</button>
-      <div id="wallFeed" style="max-height:180px; overflow-y:auto; font-size:12px;"></div>
+      <textarea id="wallText" placeholder="What's on your mind on SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
+      <div style="display:flex; gap:6px; margin-bottom:10px;">
+        <input type="file" id="wallImageInput" accept="image/*" style="display:none;" onchange="previewWallImage(event)">
+        <button onclick="document.getElementById('wallImageInput').click()" style="width:auto; padding:8px 12px; font-size:11px; background:#334155;">📷 Add Photo</button>
+        <button onclick="createPost()" style="font-size:12px; flex:1;">Post to Wall</button>
+      </div>
+      <div id="wallImagePreview" style="font-size:11px; color:#4ade80; margin-bottom:6px; display:none;">Image attached successfully!</div>
+      <div id="wallFeed" style="max-height:220px; overflow-y:auto; font-size:12px;"></div>
     </div>
 
-    <!-- 4. VIP PAYMENTS & REDEEM CODE SECTION -->
+    <!-- 4. PAYMENTS & REDEEM -->
     <div id="secPay" class="box-section hidden">
       <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>ONLY BTC & ETH (Direct Email Verification):</b></p>
       <div style="font-size:11px;">Real BTC:</div>
@@ -514,10 +568,9 @@ button:active { transform: scale(0.98); }
       </select>
       
       <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Get Code & Instructions</button>
+      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.4); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate code and send screenshot to po80payments@gmail.com</div>
       
-      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.4); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate code and send payment screenshot to po80payments@gmail.com</div>
-      
-      <input type="text" id="redeemInput" placeholder="Redeem Code SEXCITES-XXXX" autocomplete="off" autocorrect="off" spellcheck="false">
+      <input type="text" id="redeemInput" placeholder="Redeem Code SEXCITES-XXXX" autocomplete="off">
       <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Redeem VIP Months</button>
     </div>
 
@@ -528,6 +581,7 @@ button:active { transform: scale(0.98); }
 const socket = io();
 let currentUser = null;
 let currentPeerId = null;
+let attachedWallImage = null;
 
 function createHeart() {
   const container = document.getElementById('hearts');
@@ -705,22 +759,37 @@ function sendPhoto(event) {
   if(!file || !currentPeerId) return alert('Load a chat history first before sending photos.');
   const reader = new FileReader();
   reader.onload = function(e) {
-    const base64Image = e.target.result;
-    socket.emit('chat:message', { senderId: currentUser.id, recipientId: currentPeerId, text: base64Image, type: 'image' });
+    socket.emit('chat:message', { senderId: currentUser.id, recipientId: currentPeerId, text: e.target.result, type: 'image' });
+  };
+  reader.readAsDataURL(file);
+}
+
+// WALL, LIKES, COMMENTS & SHARE SYSTEM
+function previewWallImage(event) {
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    attachedWallImage = e.target.result;
+    document.getElementById('wallImagePreview').style.display = 'block';
   };
   reader.readAsDataURL(file);
 }
 
 async function createPost() {
   const text = document.getElementById('wallText').value;
+  if(!text && !attachedWallImage) return alert('Write something or attach an image.');
+
   const res = await fetch('/api/post', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ userId: currentUser.id, text })
+    body: JSON.stringify({ userId: currentUser.id, text, image: attachedWallImage })
   });
   const data = await res.json();
   if(data.success) {
     document.getElementById('wallText').value = '';
+    attachedWallImage = null;
+    document.getElementById('wallImagePreview').style.display = 'none';
   }
 }
 
@@ -728,8 +797,21 @@ socket.on('new-post', (post) => {
   renderSinglePost(post);
 });
 
+socket.on('post-liked', (data) => {
+  const countSpan = document.getElementById('likes_count_' + data.postId);
+  if(countSpan) countSpan.innerText = data.likesCount;
+});
+
+socket.on('new-comment', (data) => {
+  const container = document.getElementById('comments_for_' + data.postId);
+  if(container) {
+    let imgHTML = data.comment.image ? '<br><img src="' + data.comment.image + '" style="max-width:120px; border-radius:6px; margin-top:3px;">' : '';
+    container.innerHTML += '<div style="margin-top:4px; padding:6px; background:rgba(0,0,0,0.2); border-radius:6px;"><b style="color:#38bdf8;">@' + data.comment.author + ':</b> ' + data.comment.text + imgHTML + '</div>';
+  }
+});
+
 async function loadPosts() {
-  const res = await fetch('/api/posts');
+  const res = await fetch('/api/posts?userId=' + currentUser.id);
   const data = await res.json();
   const feed = document.getElementById('wallFeed');
   feed.innerHTML = '';
@@ -741,9 +823,99 @@ async function loadPosts() {
 function renderSinglePost(p) {
   const feed = document.getElementById('wallFeed');
   const div = document.createElement('div');
-  div.style.cssText = "background:rgba(255,255,255,0.03); padding:8px; border-radius:8px; margin-bottom:6px; border:1px solid rgba(255,255,255,0.05);";
-  div.innerHTML = '<b style="color:#ff758c;">@' + p.author + '</b><p style="margin-top:2px; color:#e2e8f0;">' + p.text + '</p>';
+  div.id = 'post_' + p.id;
+  div.style.cssText = "background:rgba(255,255,255,0.03); padding:10px; border-radius:10px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.05);";
+  
+  let imgHTML = p.image ? '<br><img src="' + p.image + '" style="max-width:100%; border-radius:8px; margin-top:6px;">' : '';
+  let likesCount = p.likesCount !== undefined ? p.likesCount : (p.likes ? p.likes.length : 0);
+  let hasLiked = p.userHasLiked !== undefined ? p.userHasLiked : (p.likes && p.likes.includes(currentUser.id));
+  let likeColor = hasLiked ? '#ff758c' : '#cbd5e1';
+
+  let commentsHTML = '<div id="comments_for_' + p.id + '" style="margin-top:8px; padding-left:10px; border-left:2px solid rgba(255,117,140,0.3);">';
+  if(p.comments) {
+    p.comments.forEach(c => {
+      let cImg = c.image ? '<br><img src="' + c.image + '" style="max-width:120px; border-radius:6px; margin-top:3px;">' : '';
+      commentsHTML += '<div style="margin-top:4px; padding:6px; background:rgba(0,0,0,0.2); border-radius:6px;"><b style="color:#38bdf8;">@' + c.author + ':</b> ' + c.text + cImg + '</div>';
+    });
+  }
+  commentsHTML += '</div>';
+
+  div.innerHTML = '<b style="color:#ff758c;">@' + p.author + '</b>' +
+                  '<p style="margin-top:2px; color:#e2e8f0;">' + p.text + '</p>' + imgHTML +
+                  '<div style="display:flex; gap:15px; margin-top:8px; font-size:11px;">' +
+                    '<button onclick="toggleLike(\\\'' + p.id + '\\\')" id="like_btn_' + p.id + '" style="width:auto; background:none; border:none; color:' + likeColor + '; cursor:pointer; padding:0; font-weight:600;">❤️ <span id="likes_count_' + p.id + '">' + likesCount + '</span> Likes</button>' +
+                    '<button onclick="sharePost(\\\'' + p.id + '\\\')" style="width:auto; background:none; border:none; color:#38bdf8; cursor:pointer; padding:0; font-weight:600;">🔗 Share</button>' +
+                  '</div>' +
+                  commentsHTML +
+                  '<div style="display:flex; gap:4px; margin-top:8px;">' +
+                    '<input type="text" id="reply_text_' + p.id + '" placeholder="Write a reply or post photo..." style="margin:0; font-size:11px; padding:6px;">' +
+                    '<input type="file" id="reply_img_' + p.id + '" accept="image/*" style="display:none;" onchange="handleReplyImage(event, \\\\'' + p.id + '\\\\')">' +
+                    '<button onclick="document.getElementById(\\\'reply_img_' + p.id + '\\\').click()" style="width:36px; margin:0; padding:0; background:#334155; font-size:12px;" title="Attach photo">📷</button>' +
+                    '<button onclick="sendComment(\\\'' + p.id + '\\\')" style="width:70px; margin:0; padding:6px; font-size:11px;">Reply</button>' +
+                  '</div>';
+
   feed.prepend(div);
+}
+
+async function toggleLike(postId) {
+  const res = await fetch('/api/post/like', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ userId: currentUser.id, postId })
+  });
+  const data = await res.json();
+  if(data.success) {
+    const btn = document.getElementById('like_btn_' + postId);
+    if(data.liked) {
+      btn.style.color = '#ff758c';
+    } else {
+      btn.style.color = '#cbd5e1';
+    }
+  }
+}
+
+function sharePost(postId) {
+  const shareText = 'Check out this post on SEXCITES.COM! ID: ' + postId;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(window.location.origin + '#post-' + postId);
+    alert('Post link copied to clipboard! Share it with anyone.');
+  } else {
+    alert(shareText);
+  }
+}
+
+// Temporary store for reply images keyed by post ID
+const replyImages = {};
+function handleReplyImage(event, postId) {
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    replyImages[postId] = e.target.result;
+    alert('Photo attached to reply!');
+  };
+  reader.readAsDataURL(file);
+}
+
+async function sendComment(postId) {
+  const textInput = document.getElementById('reply_text_' + postId);
+  const text = textInput.value;
+  const image = replyImages[postId] || null;
+
+  if(!text && !image) return alert('Type a response or attach an image.');
+
+  const res = await fetch('/api/post/comment', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ userId: currentUser.id, postId, text, image })
+  });
+  const data = await res.json();
+  if(data.success) {
+    textInput.value = '';
+    delete replyImages[postId];
+  } else {
+    alert(data.error);
+  }
 }
 
 async function requestPaymentCode() {
@@ -755,7 +927,7 @@ async function requestPaymentCode() {
   });
   const data = await res.json();
   if(data.success) {
-    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Code: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Send screenshot to <a href="mailto:' + data.adminEmail + '" style="color:#38bdf8;">' + data.adminEmail + '</a>. If delayed, +4 extra months free added!</span>';
+    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Code: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Send screenshot to <a href="mailto:' + data.adminEmail + '" style="color:#38bdf8;">' + data.adminEmail + '</a>.</span>';
   } else {
     alert(data.error);
   }
@@ -785,5 +957,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V13 running on port ' + PORT);
+  console.log('SEXCITES.COM V15 running on port ' + PORT);
 });

@@ -34,7 +34,7 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V17.5 LIVE & FULLY OPERATIONAL - SYSTEM VERIFIED 24/7');
+  res.status(200).send('SEXCITES.COM V17.6 LIVE & FULLY OPERATIONAL - SYSTEM VERIFIED 24/7');
 });
 
 // Strict registration: 1 device = 1 account + 500 Free Limit Blocker (501+ requires payment first)
@@ -327,7 +327,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Front-End Interface (Strictly in English, with fully verified Sign In, 24/7 Translate Widget, Wall, Real-Time Chat & Photos)
+// Front-End Interface (Strictly in English, with fully verified Sign In toggle, 24/7 Translate Widget, Wall, Real-Time Chat & Photos)
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -525,15 +525,16 @@ button:active { transform: scale(0.98); }
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private Community 18+ • Real-Time V17.5</div>
+  <div class="subtitle">Private Community 18+ • Real-Time V17.6</div>
 
   <!-- AUTH VIEW -->
   <div id="authView">
     <div style="display:flex; gap:10px; margin-bottom:15px;">
       <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.12)">Register</button>
-      <button onclick="switchTab('log')" id="btnLogTab">Sign In</button>
+      <button onclick="switchTab('log')" id="btnLogTab" style="background:transparent">Sign In</button>
     </div>
 
+    <!-- REGISTER FORM -->
     <div id="regForm">
       <div style="font-size:11px; color:#4ade80; margin-bottom:8px; text-align:center;">🔥 Users 1 to 500 get 2 Months Free! (501+ Locked & Requires Payment)</div>
       <input type="text" id="rUser" placeholder="Username (@example)" autocomplete="off">
@@ -542,11 +543,14 @@ button:active { transform: scale(0.98); }
       <button onclick="registerUser()">Create Account (1 Device Block)</button>
     </div>
 
+    <!-- SIGN IN FORM (Separated completely so login fields don't mix with registration) -->
     <div id="logForm" class="hidden">
+      <div style="font-size:11px; color:#05d9e8; margin-bottom:8px; text-align:center;">🔐 Sign In to your existing account</div>
       <input type="text" id="lUser" placeholder="Username or Email" autocomplete="off">
       <input type="password" id="lPass" placeholder="Password" autocomplete="off">
       <button onclick="loginUser()">Sign In to System</button>
     </div>
+
     <div id="authError" style="color:#f87171; font-size:12px; text-align:center; margin-top:10px;"></div>
 
     <!-- FOUNDER DEBUT & FEATURE DESCRIPTION -->
@@ -1038,5 +1042,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V17.5 running on port ' + PORT);
+  console.log('SEXCITES.COM V17.6 running on port ' + PORT);
 });

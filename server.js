@@ -1,644 +1,158 @@
-const express = require("express");
-const http = require("http");
-const path = require("path");
-const fs = require("fs");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
-const { Server } = require("socket.io");
-const { v4: uuid } = require("uuid");
+const express=require("express");
+const http=require("http");
+const path=require("path");
+const fs=require("fs");
+const bcrypt=require("bcryptjs");
+const jwt=require("jsonwebtoken");
+const helmet=require("helmet");
+const rateLimit=require("express-rate-limit");
+const {Server}=require("socket.io");
+const {randomUUID}=require("crypto");
+const uuid=()=>randomUUID();
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+const app=express();
+const server=http.createServer(app);
+const io=new Server(server);
+const PORT=process.env.PORT||3000;
+const JWT_SECRET=process.env.JWT_SECRET||"CHANGE_THIS_SECRET_IN_RENDER";
+const DB_FILE=path.join(__dirname,"database.json");
 
-const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || "CHANGE_THIS_SECRET_IN_RENDER";
-const DB_FILE = path.join(__dirname, "database.json");
+app.use(helmet({contentSecurityPolicy:false}));
+app.use(express.json({limit:"10mb"}));
+app.use(express.urlencoded({extended:true,limit:"10mb"}));
+app.use(rateLimit({windowMs:15*60*1000,max:300}));
 
-app.use(
-  helmet({
-    contentSecurityPolicy: false,
-  })
-);
-
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-app.use(express.static(path.join(__dirname, "public")));
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  message: { error: "Too many requests. Try again later." },
-});
-
-app.use("/api/", limiter);
-
-function loadDatabase() {
-  if (!fs.existsSync(DB_FILE)) {
-    const initialDatabase = {
-      users: [],
-      posts: [],
-      comments: [],
-      likes: [],
-      messages: [],
-      friendRequests: [],
-      notifications: [],
-    };
-
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialDatabase, null, 2));
-    return initialDatabase;
-  }
-
-  try {
-    return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-  } catch {
-    return {
-      users: [],
-      posts: [],
-      comments: [],
-      likes: [],
-      messages: [],
-      friendRequests: [],
-      notifications: [],
-    };
-  }
+function emptyDB(){return {users:[],posts:[],comments:[],likes:[],messages:[],friendRequests:[],notifications:[]};}
+function loadDB(){try{return fs.existsSync(DB_FILE)?JSON.parse(fs.readFileSync(DB_FILE,"utf8")):emptyDB()}catch{return emptyDB()}}
+let db=loadDB();
+function save(){fs.writeFileSync(DB_FILE,JSON.stringify(db,null,2))}
+function safeUser(u){return {id:u.id,username:u.username,email:u.email,avatar:u.avatar||"",bio:u.bio||"",vip:!!u.vip,createdAt:u.createdAt}}
+function token(u){return jwt.sign({id:u.id,email:u.email},JWT_SECRET,{expiresIn:"7d"})}
+function auth(req,res,next){
+  const h=req.headers.authorization;
+  if(!h||!h.startsWith("Bearer "))return res.status(401).json({error:"Authentication required"});
+  try{req.user=jwt.verify(h.slice(7),JWT_SECRET);next()}catch{return res.status(401).json({error:"Invalid or expired session"})}
+}
+function notify(userId,data){
+  const n={id:uuid(),userId,...data,createdAt:new Date().toISOString()};
+  db.notifications.push(n);save();io.to("user:"+userId).emit("notification",n);
 }
 
-let db = loadDatabase();
+app.get("/api/health",(req,res)=>res.json({online:true,name:"SEXCITES.COM"}));
 
-function saveDatabase() {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
-function createToken(user) {
-  return jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-    },
-    JWT_SECRET,
-    { expiresIn: "7d" }
-  );
-}
-
-function auth(req, res, next) {
-  const header = req.headers.authorization;
-
-  if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({
-      error: "Authentication required",
-    });
-  }
-
-  const token = header.replace("Bearer ", "");
-
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({
-      error: "Invalid or expired session",
-    });
-  }
-}
-
-function publicUser(user) {
-  return {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    avatar: user.avatar || "",
-    bio: user.bio || "",
-    vip: Boolean(user.vip),
-    createdAt: user.createdAt,
-  };
-}
-
-function notifyUser(userId, notification) {
-  db.notifications.push({
-    id: uuid(),
-    userId,
-    ...notification,
-    createdAt: new Date().toISOString(),
-  });
-
-  saveDatabase();
-
-  io.to(`user:${userId}`).emit("notification", notification);
-}
-
-/* HEALTH CHECK */
-
-app.get("/api/health", (req, res) => {
-  res.json({
-    online: true,
-    name: "SEXCITES.COM",
-    time: new Date().toISOString(),
-  });
+app.post("/api/register",async(req,res)=>{
+  const username=String(req.body.username||"").trim();
+  const email=String(req.body.email||"").trim().toLowerCase();
+  const password=String(req.body.password||"");
+  if(username.length<3||username.length>30)return res.status(400).json({error:"Username must contain 3-30 characters"});
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({error:"Invalid email"});
+  if(password.length<8)return res.status(400).json({error:"Password must contain at least 8 characters"});
+  if(db.users.some(u=>u.email===email))return res.status(409).json({error:"Email already registered"});
+  if(db.users.some(u=>u.username.toLowerCase()===username.toLowerCase()))return res.status(409).json({error:"Username already taken"});
+  const u={id:uuid(),username,email,passwordHash:await bcrypt.hash(password,12),avatar:"",bio:"",vip:false,createdAt:new Date().toISOString()};
+  db.users.push(u);save();
+  res.status(201).json({token:token(u),user:safeUser(u)});
 });
 
-/* REGISTER */
-
-app.post("/api/register", async (req, res) => {
-  try {
-    const { username, email, password } = req.body;
-
-    if (!username || !email || !password) {
-      return res.status(400).json({
-        error: "Username, email and password are required",
-      });
-    }
-
-    if (username.length < 3 || username.length > 30) {
-      return res.status(400).json({
-        error: "Username must contain 3 to 30 characters",
-      });
-    }
-
-    if (password.length < 8) {
-      return res.status(400).json({
-        error: "Password must contain at least 8 characters",
-      });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-    const normalizedUsername = username.trim();
-
-    const emailExists = db.users.some(
-      (user) => user.email === normalizedEmail
-    );
-
-    if (emailExists) {
-      return res.status(409).json({
-        error: "Email already registered",
-      });
-    }
-
-    const usernameExists = db.users.some(
-      (user) =>
-        user.username.toLowerCase() === normalizedUsername.toLowerCase()
-    );
-
-    if (usernameExists) {
-      return res.status(409).json({
-        error: "Username already taken",
-      });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    const user = {
-      id: uuid(),
-      username: normalizedUsername,
-      email: normalizedEmail,
-      passwordHash,
-      avatar: "",
-      bio: "",
-      vip: false,
-      createdAt: new Date().toISOString(),
-    };
-
-    db.users.push(user);
-    saveDatabase();
-
-    const token = createToken(user);
-
-    res.status(201).json({
-      message: "Account created successfully",
-      token,
-      user: publicUser(user),
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      error: "Registration failed",
-    });
-  }
+app.post("/api/login",async(req,res)=>{
+  const email=String(req.body.email||"").trim().toLowerCase();
+  const password=String(req.body.password||"");
+  const u=db.users.find(x=>x.email===email);
+  if(!u||!(await bcrypt.compare(password,u.passwordHash)))return res.status(401).json({error:"Invalid email or password"});
+  res.json({token:token(u),user:safeUser(u)});
 });
 
-/* LOGIN */
-
-app.post("/api/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    const user = db.users.find(
-      (item) => item.email === String(email).toLowerCase().trim()
-    );
-
-    if (!user) {
-      return res.status(401).json({
-        error: "Invalid email or password",
-      });
-    }
-
-    const validPassword = await bcrypt.compare(password, user.passwordHash);
-
-    if (!validPassword) {
-      return res.status(401).json({
-        error: "Invalid email or password",
-      });
-    }
-
-    const token = createToken(user);
-
-    res.json({
-      message: "Login successful",
-      token,
-      user: publicUser(user),
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      error: "Login failed",
-    });
-  }
+app.get("/api/me",auth,(req,res)=>{
+  const u=db.users.find(x=>x.id===req.user.id);
+  if(!u)return res.status(404).json({error:"User not found"});
+  res.json({user:safeUser(u)});
 });
 
-/* CURRENT USER */
-
-app.get("/api/me", auth, (req, res) => {
-  const user = db.users.find((item) => item.id === req.user.id);
-
-  if (!user) {
-    return res.status(404).json({
-      error: "User not found",
-    });
-  }
-
-  res.json({
-    user: publicUser(user),
-  });
+app.get("/api/users",auth,(req,res)=>{
+  res.json({users:db.users.filter(u=>u.id!==req.user.id).map(safeUser)});
 });
 
-/* USERS */
-
-app.get("/api/users", auth, (req, res) => {
-  const users = db.users
-    .filter((user) => user.id !== req.user.id)
-    .map(publicUser);
-
-  res.json({ users });
+app.get("/api/posts",auth,(req,res)=>{
+  const posts=db.posts.map(p=>({
+    ...p,
+    author:safeUser(db.users.find(u=>u.id===p.userId)||{}),
+    likes:db.likes.filter(l=>l.postId===p.id).length,
+    likedByMe:db.likes.some(l=>l.postId===p.id&&l.userId===req.user.id),
+    comments:db.comments.filter(c=>c.postId===p.id).map(c=>({...c,author:safeUser(db.users.find(u=>u.id===c.userId)||{})}))
+  })).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  res.json({posts});
 });
 
-/* POSTS */
-
-app.get("/api/posts", auth, (req, res) => {
-  const posts = db.posts
-    .map((post) => {
-      const author = db.users.find((user) => user.id === post.userId);
-
-      return {
-        ...post,
-        author: author ? publicUser(author) : null,
-        likes: db.likes.filter((like) => like.postId === post.id).length,
-        likedByMe: db.likes.some(
-          (like) =>
-            like.postId === post.id && like.userId === req.user.id
-        ),
-        comments: db.comments
-          .filter((comment) => comment.postId === post.id)
-          .map((comment) => {
-            const commentUser = db.users.find(
-              (user) => user.id === comment.userId
-            );
-
-            return {
-              ...comment,
-              author: commentUser ? publicUser(commentUser) : null,
-            };
-          }),
-      };
-    })
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-  res.json({ posts });
+app.post("/api/posts",auth,(req,res)=>{
+  const content=String(req.body.content||"").trim(), image=String(req.body.image||"");
+  if(!content&&!image)return res.status(400).json({error:"Post cannot be empty"});
+  const p={id:uuid(),userId:req.user.id,content,image,createdAt:new Date().toISOString()};
+  db.posts.push(p);save();io.emit("newPost",p);res.status(201).json({post:p});
 });
 
-app.post("/api/posts", auth, (req, res) => {
-  const { content, image } = req.body;
-
-  if (!content && !image) {
-    return res.status(400).json({
-      error: "Post content or image is required",
-    });
-  }
-
-  const post = {
-    id: uuid(),
-    userId: req.user.id,
-    content: content || "",
-    image: image || "",
-    createdAt: new Date().toISOString(),
-  };
-
-  db.posts.push(post);
-  saveDatabase();
-
-  io.emit("newPost", post);
-
-  res.status(201).json({
-    message: "Post published",
-    post,
-  });
+app.post("/api/posts/:id/like",auth,(req,res)=>{
+  const exists=db.likes.find(l=>l.postId===req.params.id&&l.userId===req.user.id);
+  if(exists)db.likes=db.likes.filter(l=>l.id!==exists.id);
+  else db.likes.push({id:uuid(),postId:req.params.id,userId:req.user.id,createdAt:new Date().toISOString()});
+  save();const likes=db.likes.filter(l=>l.postId===req.params.id).length;
+  io.emit("postLikeUpdated",{postId:req.params.id,likes});
+  res.json({liked:!exists,likes});
 });
 
-/* LIKE / UNLIKE */
-
-app.post("/api/posts/:postId/like", auth, (req, res) => {
-  const post = db.posts.find((item) => item.id === req.params.postId);
-
-  if (!post) {
-    return res.status(404).json({
-      error: "Post not found",
-    });
-  }
-
-  const existingLike = db.likes.find(
-    (like) =>
-      like.postId === req.params.postId && like.userId === req.user.id
-  );
-
-  if (existingLike) {
-    db.likes = db.likes.filter((like) => like.id !== existingLike.id);
-  } else {
-    db.likes.push({
-      id: uuid(),
-      postId: req.params.postId,
-      userId: req.user.id,
-      createdAt: new Date().toISOString(),
-    });
-  }
-
-  saveDatabase();
-
-  io.emit("postLikeUpdated", {
-    postId: req.params.postId,
-    likes: db.likes.filter(
-      (like) => like.postId === req.params.postId
-    ).length,
-  });
-
-  res.json({
-    liked: !existingLike,
-  });
+app.post("/api/posts/:id/comments",auth,(req,res)=>{
+  const content=String(req.body.content||"").trim();
+  if(!content)return res.status(400).json({error:"Comment cannot be empty"});
+  const c={id:uuid(),postId:req.params.id,userId:req.user.id,content,createdAt:new Date().toISOString()};
+  db.comments.push(c);save();io.emit("newComment",c);res.status(201).json({comment:c});
 });
 
-/* COMMENTS */
-
-app.post("/api/posts/:postId/comments", auth, (req, res) => {
-  const { content } = req.body;
-
-  if (!content || !content.trim()) {
-    return res.status(400).json({
-      error: "Comment cannot be empty",
-    });
-  }
-
-  const post = db.posts.find((item) => item.id === req.params.postId);
-
-  if (!post) {
-    return res.status(404).json({
-      error: "Post not found",
-    });
-  }
-
-  const comment = {
-    id: uuid(),
-    postId: req.params.postId,
-    userId: req.user.id,
-    content: content.trim(),
-    createdAt: new Date().toISOString(),
-  };
-
-  db.comments.push(comment);
-  saveDatabase();
-
-  io.emit("newComment", comment);
-
-  res.status(201).json({
-    comment,
-  });
+app.get("/api/messages/:userId",auth,(req,res)=>{
+  res.json({messages:db.messages.filter(m=>(m.from===req.user.id&&m.to===req.params.userId)||(m.from===req.params.userId&&m.to===req.user.id)).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt))});
 });
 
-/* FRIEND REQUESTS */
-
-app.post("/api/friends/request/:userId", auth, (req, res) => {
-  const targetUser = db.users.find(
-    (user) => user.id === req.params.userId
-  );
-
-  if (!targetUser) {
-    return res.status(404).json({
-      error: "User not found",
-    });
-  }
-
-  if (targetUser.id === req.user.id) {
-    return res.status(400).json({
-      error: "You cannot add yourself",
-    });
-  }
-
-  const alreadyExists = db.friendRequests.find(
-    (request) =>
-      request.from === req.user.id &&
-      request.to === targetUser.id
-  );
-
-  if (alreadyExists) {
-    return res.status(409).json({
-      error: "Friend request already sent",
-    });
-  }
-
-  const request = {
-    id: uuid(),
-    from: req.user.id,
-    to: targetUser.id,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  };
-
-  db.friendRequests.push(request);
-  saveDatabase();
-
-  notifyUser(targetUser.id, {
-    type: "friend_request",
-    from: req.user.id,
-    message: "You received a new friend request",
-  });
-
-  res.status(201).json({
-    message: "Friend request sent",
-    request,
-  });
+app.post("/api/messages/:userId",auth,(req,res)=>{
+  const content=String(req.body.content||"").trim(),image=String(req.body.image||"");
+  if(!content&&!image)return res.status(400).json({error:"Message cannot be empty"});
+  const receiver=db.users.find(u=>u.id===req.params.userId);
+  if(!receiver)return res.status(404).json({error:"User not found"});
+  const m={id:uuid(),from:req.user.id,to:receiver.id,content,image,createdAt:new Date().toISOString()};
+  db.messages.push(m);save();
+  io.to("user:"+receiver.id).emit("privateMessage",m);
+  io.to("user:"+req.user.id).emit("privateMessage",m);
+  res.status(201).json({message:m});
 });
 
-app.get("/api/friends/requests", auth, (req, res) => {
-  const requests = db.friendRequests
-    .filter(
-      (request) =>
-        request.to === req.user.id && request.status === "pending"
-    )
-    .map((request) => {
-      const user = db.users.find((item) => item.id === request.from);
-
-      return {
-        ...request,
-        user: user ? publicUser(user) : null,
-      };
-    });
-
-  res.json({ requests });
+app.post("/api/friends/request/:userId",auth,(req,res)=>{
+  if(!db.users.some(u=>u.id===req.params.userId))return res.status(404).json({error:"User not found"});
+  if(db.friendRequests.some(r=>r.from===req.user.id&&r.to===req.params.userId&&r.status==="pending"))return res.status(409).json({error:"Request already sent"});
+  const r={id:uuid(),from:req.user.id,to:req.params.userId,status:"pending",createdAt:new Date().toISOString()};
+  db.friendRequests.push(r);save();notify(req.params.userId,{type:"friend_request",from:req.user.id,message:"New friend request"});res.status(201).json({request:r});
 });
 
-app.post("/api/friends/:requestId/accept", auth, (req, res) => {
-  const request = db.friendRequests.find(
-    (item) =>
-      item.id === req.params.requestId &&
-      item.to === req.user.id &&
-      item.status === "pending"
-  );
-
-  if (!request) {
-    return res.status(404).json({
-      error: "Friend request not found",
-    });
-  }
-
-  request.status = "accepted";
-  saveDatabase();
-
-  notifyUser(request.from, {
-    type: "friend_accepted",
-    message: "Your friend request was accepted",
-  });
-
-  res.json({
-    message: "Friend request accepted",
-  });
+app.get("/api/friends/requests",auth,(req,res)=>{
+  res.json({requests:db.friendRequests.filter(r=>r.to===req.user.id&&r.status==="pending").map(r=>({...r,user:safeUser(db.users.find(u=>u.id===r.from)||{})}))});
 });
 
-/* PRIVATE MESSAGES */
-
-app.get("/api/messages/:userId", auth, (req, res) => {
-  const messages = db.messages
-    .filter(
-      (message) =>
-        (message.from === req.user.id &&
-          message.to === req.params.userId) ||
-        (message.from === req.params.userId &&
-          message.to === req.user.id)
-    )
-    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-
-  res.json({ messages });
+app.post("/api/friends/:id/accept",auth,(req,res)=>{
+  const r=db.friendRequests.find(x=>x.id===req.params.id&&x.to===req.user.id&&x.status==="pending");
+  if(!r)return res.status(404).json({error:"Request not found"});
+  r.status="accepted";save();notify(r.from,{type:"friend_accepted",message:"Friend request accepted"});res.json({success:true});
 });
 
-app.post("/api/messages/:userId", auth, (req, res) => {
-  const { content, image } = req.body;
-
-  if (!content && !image) {
-    return res.status(400).json({
-      error: "Message cannot be empty",
-    });
-  }
-
-  const receiver = db.users.find(
-    (user) => user.id === req.params.userId
-  );
-
-  if (!receiver) {
-    return res.status(404).json({
-      error: "Receiver not found",
-    });
-  }
-
-  const message = {
-    id: uuid(),
-    from: req.user.id,
-    to: receiver.id,
-    content: content || "",
-    image: image || "",
-    createdAt: new Date().toISOString(),
-  };
-
-  db.messages.push(message);
-  saveDatabase();
-
-  io.to(`user:${receiver.id}`).emit("privateMessage", message);
-  io.to(`user:${req.user.id}`).emit("privateMessage", message);
-
-  res.status(201).json({
-    message,
-  });
+app.get("/api/notifications",auth,(req,res)=>{
+  res.json({notifications:db.notifications.filter(n=>n.userId===req.user.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt))});
 });
 
-/* NOTIFICATIONS */
-
-app.get("/api/notifications", auth, (req, res) => {
-  const notifications = db.notifications
-    .filter((notification) => notification.userId === req.user.id)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-  res.json({ notifications });
+io.use((socket,next)=>{
+  try{socket.user=jwt.verify(socket.handshake.auth.token,JWT_SECRET);next()}catch{next(new Error("Unauthorized"))}
+});
+io.on("connection",socket=>{
+  socket.join("user:"+socket.user.id);
+  socket.emit("connected",{message:"Connected to SEXCITES.COM"});
+  socket.on("typing",data=>{if(data&&data.receiverId)io.to("user:"+data.receiverId).emit("typing",{userId:socket.user.id})});
 });
 
-/* SOCKET.IO */
+app.get("/",(req,res)=>res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SEXCITES.COM</title><style>body{margin:0;background:radial-gradient(circle at 20% 20%,#632b75,#090817 45%,#02030b);color:white;font-family:Arial;min-height:100vh;display:grid;place-items:center}main{padding:45px;text-align:center;background:#ffffff12;border:1px solid #ffffff25;border-radius:25px;backdrop-filter:blur(18px);box-shadow:0 0 80px #ff28c855}h1{font-size:48px;color:#ff66d9;text-shadow:0 0 25px #ff22bb}p{color:#ddd}code{color:#63e6ff}</style></head><body><main><h1>SEXCITES.COM</h1><p>Private social dating community for adults.</p><p>Server is online and operational.</p><code>API: /api/health</code></main></body></html>`));
+app.use((req,res)=>res.status(404).json({error:"Route not found"}));
 
-io.use((socket, next) => {
-  try {
-    const token = socket.handshake.auth.token;
-
-    if (!token) {
-      return next(new Error("Authentication required"));
-    }
-
-    socket.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    next(new Error("Invalid socket authentication"));
-  }
-});
-
-io.on("connection", (socket) => {
-  const userId = socket.user.id;
-
-  socket.join(`user:${userId}`);
-
-  console.log(`User connected: ${userId}`);
-
-  socket.emit("connected", {
-    message: "Connected to SEXCITES.COM",
-  });
-
-  socket.on("joinPrivateRoom", ({ userId: otherUserId }) => {
-    const roomId = [userId, otherUserId].sort().join(":");
-    socket.join(`private:${roomId}`);
-  });
-
-  socket.on("typing", ({ receiverId }) => {
-    io.to(`user:${receiverId}`).emit("typing", {
-      userId,
-    });
-  });
-
-  socket.on("disconnect", () => {
-    console.log(`User disconnected: ${userId}`);
-  });
-});
-
-/* SPA FALLBACK */
-
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-/* START SERVER */
-
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`SEXCITES.COM running on port ${PORT}`);
-});
+server.listen(PORT,"0.0.0.0",()=>console.log("SEXCITES.COM running on port "+PORT));

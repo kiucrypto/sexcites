@@ -14,7 +14,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // ==========================================
 const users = new Map();          // id -> userObj
 const usersByName = new Map();    // username -> id
-const deviceFingerprints = new Map(); // phone/device identifier -> userId (1 account per phone)
 const friends = new Map();        // userId -> Set(friendIds)
 const friendRequests = new Map(); // userId -> Map(senderId -> requestObj)
 const messages = new Map();       // chatId -> [ {senderId, text, type, timestamp} ]
@@ -25,7 +24,7 @@ let totalRegisteredCount = 0;     // Counter for 0 to 500 promo system
 
 const BTC_WALLET = "bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s";
 const ETH_WALLET = "0x4ABCf532fed9D9CFD0d3C4654cDFB56D02cFF21c";
-const ADMIN_EMAIL = "po80payments@gmail.com";
+const ADMIN_CONTACT = "Administrator Support";
 
 function getChatId(id1, id2) {
   return id1 < id2 ? id1 + '_' + id2 : id2 + '_' + id1;
@@ -35,20 +34,15 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V19.0 LIVE & FULLY OPERATIONAL');
+  res.status(200).send('SEXCITES.COM V20.0 LIVE & FULLY OPERATIONAL');
 });
 
 app.post('/api/register', (req, res) => {
   try {
-    const { username, email, password, phone } = req.body;
+    const { username, password } = req.body;
     
     if (!username || username.trim().length < 2 || !password || password.trim().length < 3) {
-      return res.json({ success: false, error: 'Please enter a valid username and password.' });
-    }
-
-    const cleanPhone = (phone || '').trim();
-    if (cleanPhone && deviceFingerprints.has(cleanPhone)) {
-      return res.json({ success: false, error: 'Only one account is allowed per phone number/device.' });
+      return res.json({ success: false, error: 'Please enter a valid username and password (min 3 chars).' });
     }
 
     const cleanUser = username.trim().toLowerCase().replace('@', '');
@@ -64,9 +58,7 @@ app.post('/api/register', (req, res) => {
     const newUser = {
       id: userId,
       username: cleanUser,
-      email: (email || '').trim().toLowerCase(),
       password: password,
-      phone: cleanPhone,
       isFree: isFreePromo,
       vipMonths: initialMonths,
       registrationNumber: totalRegisteredCount,
@@ -75,7 +67,6 @@ app.post('/api/register', (req, res) => {
 
     users.set(userId, newUser);
     usersByName.set(cleanUser, userId);
-    if (cleanPhone) deviceFingerprints.set(cleanPhone, userId);
     friends.set(userId, new Set());
     friendRequests.set(userId, new Map());
 
@@ -87,24 +78,14 @@ app.post('/api/register', (req, res) => {
 
 app.post('/api/login', (req, res) => {
   try {
-    const { identifier, password } = req.body;
-    const cleanId = (identifier || '').trim().toLowerCase().replace('@', '');
+    const { username, password } = req.body;
+    const cleanId = (username || '').trim().toLowerCase().replace('@', '');
     
     if (!cleanId || !password) {
-      return res.json({ success: false, error: 'Please complete all fields.' });
+      return res.json({ success: false, error: 'Please complete both username and password.' });
     }
 
-    let userId = usersByName.get(cleanId);
-    
-    if (!userId) {
-      for (let [uId, uObj] of users.entries()) {
-        if (uObj.email === cleanId || uObj.username === cleanId) {
-          userId = uId;
-          break;
-        }
-      }
-    }
-
+    const userId = usersByName.get(cleanId);
     if (!userId) {
       return res.json({ success: false, error: 'User not found. Please register first.' });
     }
@@ -136,8 +117,7 @@ app.post('/api/pay-request', (req, res) => {
   res.json({ 
     success: true, 
     hiddenCode, 
-    adminEmail: ADMIN_EMAIL,
-    message: 'Code generated. Send your payment screenshot to ' + ADMIN_EMAIL + ' along with this code for email activation.' 
+    message: 'Code generated successfully. Keep your code safe to activate your plan.' 
   });
 });
 
@@ -355,63 +335,23 @@ body {
   position: relative;
 }
 
-/* Striking Dynamic Motion Background with Neon Waves & Glowing Orbs */
 .motion-bg {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
+  top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; overflow: hidden;
   background: linear-gradient(125deg, #090014, #18001e, #020008);
   background-size: 400% 400%;
   animation: gradientShift 15s ease infinite;
 }
-
 @keyframes gradientShift {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
 
-.neon-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.6;
-  animation: floatOrb 12s ease-in-out infinite alternate;
-}
-
-.orb-1 {
-  width: 45vw;
-  height: 45vw;
-  background: rgba(255, 42, 109, 0.4);
-  top: -10%;
-  left: -10%;
-  animation-duration: 10s;
-}
-
-.orb-2 {
-  width: 50vw;
-  height: 50vw;
-  background: rgba(5, 217, 232, 0.35);
-  bottom: -15%;
-  right: -10%;
-  animation-duration: 14s;
-  animation-direction: alternate-reverse;
-}
-
-.orb-3 {
-  width: 35vw;
-  height: 35vw;
-  background: rgba(121, 40, 202, 0.45);
-  top: 30%;
-  left: 35%;
-  animation-duration: 8s;
-}
-
+.neon-orb { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.6; animation: floatOrb 12s ease-in-out infinite alternate; }
+.orb-1 { width: 45vw; height: 45vw; background: rgba(255, 42, 109, 0.4); top: -10%; left: -10%; }
+.orb-2 { width: 50vw; height: 50vw; background: rgba(5, 217, 232, 0.35); bottom: -15%; right: -10%; animation-direction: alternate-reverse; }
+.orb-3 { width: 35vw; height: 35vw; background: rgba(121, 40, 202, 0.45); top: 30%; left: 35%; }
 @keyframes floatOrb {
   0% { transform: translate(0px, 0px) scale(1); }
   50% { transform: translate(40px, -50px) scale(1.15); }
@@ -427,29 +367,15 @@ body {
 }
 
 .translate-float {
-  position: fixed;
-  top: 15px;
-  right: 15px;
-  background: rgba(12, 16, 38, 0.85);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 42, 109, 0.5);
-  padding: 6px 14px;
-  border-radius: 30px;
-  box-shadow: 0 4px 25px rgba(255, 42, 109, 0.4);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  position: fixed; top: 15px; right: 15px;
+  background: rgba(12, 16, 38, 0.85); backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 42, 109, 0.5); padding: 6px 14px; border-radius: 30px;
+  box-shadow: 0 4px 25px rgba(255, 42, 109, 0.4); z-index: 9999; display: flex; align-items: center; gap: 8px;
 }
 .translate-brand {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 11px; font-weight: 700;
   background: linear-gradient(90deg, #ff2a6d, #05d9e8);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  white-space: nowrap;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-transform: uppercase;
 }
 .goog-te-banner-frame { display: none !important; }
 .goog-logo-link { display: none !important; }
@@ -457,109 +383,57 @@ body {
 .goog-te-gadget span { display: none !important; }
 body { top: 0 !important; }
 .goog-te-combo {
-  background: #1e293b !important;
-  color: #fff !important;
-  border: 1px solid rgba(255,255,255,0.2) !important;
-  padding: 4px 8px !important;
-  border-radius: 8px !important;
-  font-size: 11px !important;
-  outline: none !important;
-  cursor: pointer;
+  background: #1e293b !important; color: #fff !important; border: 1px solid rgba(255,255,255,0.2) !important;
+  padding: 4px 8px !important; border-radius: 8px !important; font-size: 11px !important; outline: none !important; cursor: pointer;
 }
 
 .app-container {
-  width: 100%;
-  max-width: 480px;
-  background: rgba(15, 10, 25, 0.85);
-  backdrop-filter: blur(30px) saturate(200%);
-  border: 1px solid rgba(255, 42, 109, 0.35);
-  border-radius: 24px;
+  width: 100%; max-width: 480px;
+  background: rgba(15, 10, 25, 0.85); backdrop-filter: blur(30px) saturate(200%);
+  border: 1px solid rgba(255, 42, 109, 0.35); border-radius: 24px;
   box-shadow: 0 30px 90px rgba(0,0,0,0.95), 0 0 40px rgba(255, 42, 109, 0.2);
-  z-index: 10;
-  padding: 24px;
-  margin: 15px;
+  z-index: 10; padding: 24px; margin: 15px;
 }
 h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; background: linear-gradient(90deg, #ff2a6d, #05d9e8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .subtitle { font-size: 11px; text-align: center; color: #a5b4fc; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px; }
 
 .promo-banner {
   background: linear-gradient(135deg, rgba(255,42,109,0.2), rgba(5,217,232,0.2));
-  border: 1px solid rgba(255,42,109,0.5);
-  padding: 10px;
-  border-radius: 12px;
-  text-align: center;
-  font-size: 11px;
-  color: #fff;
-  margin-bottom: 12px;
-  font-weight: 600;
-  animation: pulseGlowBox 3s ease-in-out infinite alternate;
-}
-@keyframes pulseGlowBox {
-  0% { box-shadow: 0 0 5px rgba(255,42,109,0.3); }
-  100% { box-shadow: 0 0 15px rgba(5,217,232,0.5); }
+  border: 1px solid rgba(255,42,109,0.5); padding: 10px; border-radius: 12px;
+  text-align: center; font-size: 11px; color: #fff; margin-bottom: 12px; font-weight: 600;
 }
 
 .founder-intro-box {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 42, 109, 0.3);
-  border-radius: 14px;
-  padding: 12px;
-  margin-top: 15px;
-  font-size: 11px;
-  color: #cbd5e1;
-  line-height: 1.4;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 42, 109, 0.3);
+  border-radius: 14px; padding: 12px; margin-top: 15px; font-size: 11px; color: #cbd5e1; line-height: 1.4;
 }
 .founder-intro-box h3 { font-size: 12px; color: #ff2a6d; margin-bottom: 4px; font-weight: 700; }
 .founder-signature { margin-top: 6px; text-align: right; font-style: italic; color: #05d9e8; font-weight: 600; }
 
 .special-phrase-box {
-  margin-top: 12px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 700;
-  color: #ff2a6d;
-  text-shadow: 0 0 12px rgba(255, 42, 109, 0.6);
-  letter-spacing: 0.5px;
+  margin-top: 12px; text-align: center; font-size: 12px; font-weight: 700; color: #ff2a6d; text-shadow: 0 0 12px rgba(255, 42, 109, 0.6);
 }
 
 .terms-footer {
-  margin-top: 10px;
-  text-align: center;
-  font-size: 10px;
-  color: #64748b;
-  line-height: 1.3;
+  margin-top: 10px; text-align: center; font-size: 10px; color: #64748b; line-height: 1.3;
 }
 .terms-footer a { color: #05d9e8; text-decoration: none; }
 
 input {
-  width: 100%;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  color: #fff;
-  font-size: 14px;
-  outline: none;
-  transition: all 0.3s;
+  width: 100%; padding: 12px 16px; margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px; color: #fff; font-size: 14px; outline: none; transition: all 0.3s;
 }
 input:focus { border-color: #ff2a6d; box-shadow: 0 0 12px rgba(255,42,109,0.4); }
+
 button {
-  width: 100%;
-  padding: 12px;
-  background: linear-gradient(135deg, #ff2a6d 0%, #7928ca 100%);
-  border: none;
-  border-radius: 12px;
-  color: white;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  transition: transform 0.1s, opacity 0.2s;
+  width: 100%; padding: 12px; background: linear-gradient(135deg, #ff2a6d 0%, #7928ca 100%);
+  border: none; border-radius: 12px; color: white; font-weight: 600; font-size: 14px; cursor: pointer;
 }
 button:active { transform: scale(0.98); }
 .hidden { display: none !important; }
 .box-section { margin-top: 15px; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); }
-.badge-free { background: rgba(34,197,94,0.2); color: #4ade80; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; display: inline-block; margin-bottom: 10px; }
+.badge-free { background: rgba(34,197,94,0.2); color: #4ade80; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 .wallet-box { font-family: monospace; font-size: 11px; background: rgba(0,0,0,0.55); padding: 8px; border-radius: 8px; margin: 6px 0; word-break: break-all; color: #05d9e8; }
 .switch-link { text-align: center; margin-top: 12px; font-size: 12px; color: #cbd5e1; cursor: pointer; }
 .switch-link span { color: #05d9e8; font-weight: 600; text-decoration: underline; }
@@ -593,38 +467,36 @@ button:active { transform: scale(0.98); }
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private 18+ Community • Real-Time V19.0</div>
+  <div class="subtitle">Private 18+ Community • Real-Time V20.0</div>
 
-  <!-- AUTH VIEW (Separate Registration & Sign In Views) -->
+  <!-- AUTH VIEW (Username & Password Only) -->
   <div id="authView">
     
     <!-- REGISTER VIEW -->
     <div id="regForm">
       <div style="font-size:12px; color:#05d9e8; margin-bottom:8px; text-align:center; font-weight:700;">📝 New Member Registration</div>
       <div class="promo-banner">
-        🔥 PROMO (0 - 500): First 2 months completely FREE! Strictly 1 account per phone device.
+        🔥 PROMO (0 - 500): First 2 months completely FREE! Only username & password required.
       </div>
       <input type="text" id="rUser" placeholder="Username (e.g. your_name)" autocomplete="off">
-      <input type="email" id="rEmail" placeholder="Email (For activation code & proofs)" autocomplete="off">
-      <input type="tel" id="rPhone" placeholder="Phone Number (1 account limit per phone)" autocomplete="off">
       <input type="password" id="rPass" placeholder="Password (Minimum 3 characters)" autocomplete="off">
       <button onclick="registerUser()">Register & Claim Free Access</button>
       
       <div class="switch-link">
-        Already registered? <span onclick="toggleAuthMode('login')">Switch to Sign In</span>
+        Already registered? <span onclick="toggleAuthMode('login')">Sign In here</span>
       </div>
     </div>
 
-    <!-- SIGN IN VIEW -->
+    <!-- SIGN IN VIEW (Dedicated for Existing Users) -->
     <div id="logForm" class="hidden">
-      <div style="font-size:12px; color:#ff2a6d; margin-bottom:8px; text-align:center; font-weight:700;">🔐 Member Sign In</div>
-      <div style="font-size:11px; color:#a5b4fc; margin-bottom:12px; text-align:center;">Welcome back! Enter your login details below to access your account.</div>
-      <input type="text" id="lUser" placeholder="Username or Email" autocomplete="off">
-      <input type="password" id="lPass" placeholder="Password" autocomplete="off">
+      <div style="font-size:12px; color:#ff2a6d; margin-bottom:8px; text-align:center; font-weight:700;">🔐 Existing Member Sign In</div>
+      <div style="font-size:11px; color:#a5b4fc; margin-bottom:12px; text-align:center;">Welcome back! Enter your username and password to access your account.</div>
+      <input type="text" id="lUser" placeholder="Your Username" autocomplete="off">
+      <input type="password" id="lPass" placeholder="Your Password" autocomplete="off">
       <button onclick="loginUser()">Sign In to Dashboard</button>
       
       <div class="switch-link">
-        Don't have an account? <span onclick="toggleAuthMode('register')">Switch to Register</span>
+        New here? <span onclick="toggleAuthMode('register')">Switch to Register</span>
       </div>
     </div>
 
@@ -679,7 +551,7 @@ button:active { transform: scale(0.98); }
         <button onclick="loadChatHistory()" style="width:110px; margin:0; font-size:11px;">Load Chat</button>
       </div>
       <div id="chatBox" style="height:150px; background:rgba(0,0,0,0.45); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;">
-        <div style="color:#94a3b8; text-align:center; padding-top:40px;">Type the username above and load the history.</div>
+        <div style="color:#94a3b8; text-align:center; padding-top:40px;">Type the username above and load history.</div>
       </div>
       <div style="display:flex; gap:6px;">
         <input type="text" id="msgText" placeholder="Type a message..." autocomplete="off" style="margin:0;">
@@ -703,10 +575,10 @@ button:active { transform: scale(0.98); }
 
     <!-- 4. PAYMENTS & REDEEM -->
     <div id="secPay" class="box-section hidden">
-      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>BTC & ETH (Send proofs to po80payments@gmail.com):</b></p>
-      <div style="font-size:11px;">Real BTC Wallet:</div>
+      <p style="font-size:12px; margin-bottom:6px; color:#cbd5e1;"><b>BTC & ETH Wallets:</b></p>
+      <div style="font-size:11px;">BTC Wallet:</div>
       <div class="wallet-box">${BTC_WALLET}</div>
-      <div style="font-size:11px;">Real ETH Wallet:</div>
+      <div style="font-size:11px;">ETH Wallet:</div>
       <div class="wallet-box">${ETH_WALLET}</div>
       
       <select id="selectPlan" style="width:100%; padding:10px; background:#1e293b; color:#fff; border-radius:8px; border:none; margin:8px 0; font-size:12px;">
@@ -715,21 +587,13 @@ button:active { transform: scale(0.98); }
         <option value="ONE_TIME">$28.99 = 12 Months Full</option>
       </select>
       
-      <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Get Code & Instructions</button>
-      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.55); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate your code and email screenshot to po80payments@gmail.com for activation code.</div>
+      <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Generate Payment Code</button>
+      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.55); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate your unique redemption code.</div>
       
       <input type="text" id="redeemInput" placeholder="Redeem Code SEXCITES-XXXX" autocomplete="off">
       <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Redeem VIP Months</button>
     </div>
 
-  </div>
-
-  <!-- PLATFORM DESCRIPTION & MODERN UPDATES SECTION (Bottom Info Box) -->
-  <div style="margin-top:20px; padding:14px; background:rgba(12,16,38,0.7); border:1px solid rgba(5,217,232,0.3); border-radius:14px; font-size:11px; color:#94a3b8; line-height:1.5;">
-    <h4 style="color:#05d9e8; font-size:12px; margin-bottom:6px; font-weight:700;">🌟 System Architecture & Modern Updates (V19.0)</h4>
-    <p style="margin-bottom:6px;"><b>High-Performance Core:</b> Built with Node.js, Express, and WebSockets for lightning-fast 24/7 real-time messaging, walls, and instant authentication.</p>
-    <p style="margin-bottom:6px;"><b>Security & Compliance:</b> Strict device fingerprinting allowing 1 account per phone device, paired with automated email proof verification (${ADMIN_EMAIL}).</p>
-    <p><b>Global Accessibility:</b> Integrated multi-language translation toolbar, high-speed memory maps, and immersive dynamic motion background animations.</p>
   </div>
 
 </div>
@@ -796,14 +660,12 @@ function switchDashTab(tab) {
 
 async function registerUser() {
   const username = document.getElementById('rUser').value;
-  const email = document.getElementById('rEmail').value;
-  const phone = document.getElementById('rPhone').value;
   const password = document.getElementById('rPass').value;
   const errorBox = document.getElementById('authError');
   errorBox.innerText = '';
 
-  if(!username || !password || !phone) {
-    errorBox.innerText = 'Please complete username, phone number, and password.';
+  if(!username || !password) {
+    errorBox.innerText = 'Please enter a username and password.';
     return;
   }
 
@@ -811,12 +673,12 @@ async function registerUser() {
     const res = await fetch('/api/register', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username, email, password, phone })
+      body: JSON.stringify({ username, password })
     });
     const data = await res.json();
     if(data.success) {
       if(data.isFreePromo) {
-        alert('Congratulations! You are registration #' + data.totalCount + '. Your first 2 months are FREE!');
+        alert('Congratulations! Registration #' + data.totalCount + '. Your first 2 months are FREE!');
       } else {
         alert('Registration complete! The 0-500 free promo has ended. Please proceed to payment section.');
       }
@@ -830,13 +692,13 @@ async function registerUser() {
 }
 
 async function loginUser() {
-  const identifier = document.getElementById('lUser').value;
+  const username = document.getElementById('lUser').value;
   const password = document.getElementById('lPass').value;
   const errorBox = document.getElementById('authError');
   errorBox.innerText = '';
 
-  if(!identifier || !password) {
-    errorBox.innerText = 'Please enter username and password.';
+  if(!username || !password) {
+    errorBox.innerText = 'Please enter your username and password.';
     return;
   }
 
@@ -844,7 +706,7 @@ async function loginUser() {
     const res = await fetch('/api/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ identifier, password })
+      body: JSON.stringify({ username, password })
     });
     const data = await res.json();
     if(data.success) {
@@ -1096,7 +958,7 @@ async function requestPaymentCode() {
   });
   const data = await res.json();
   if(data.success) {
-    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Code: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Send payment proof to ' + data.adminEmail + ' to receive activation code.</span>';
+    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Your Code: ' + data.hiddenCode + '</b>';
   }
 }
 
@@ -1105,7 +967,7 @@ async function redeemCode() {
   const res = await fetch('/api/redeem', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.identity ? {} : JSON.stringify({ userId: currentUser.id, code })
+    body: JSON.stringify({ userId: currentUser.id, code })
   });
   const data = await res.json();
   if(data.success) {
@@ -1122,5 +984,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V19.0 running on port ' + PORT);
+  console.log('SEXCITES.COM V20.0 running on port ' + PORT);
 });

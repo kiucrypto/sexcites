@@ -18,7 +18,7 @@ const devices = new Map();        // deviceKey -> userId (Anti multi-account pro
 const friends = new Map();        // userId -> Set(friendIds)
 const friendRequests = new Map(); // userId -> Map(senderId -> requestObj)
 const messages = new Map();       // chatId -> [ {senderId, text, type, timestamp} ]
-const posts = [];                 // [ {id, author, text, image, timestamp, likes: Set(), comments: []} ]
+const posts = [];                 // [ {id, author, text, image, timestamp, likes: [], comments: []} ]
 const userCodes = new Map();      // userId -> [ {code, plan, months, used} ]
 
 const BTC_WALLET = "bc1qep3ntxf6lz037ny04706u88jsl364p0ny4776s";
@@ -34,7 +34,7 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V17.1 LIVE & FULLY OPERATIONAL');
+  res.status(200).send('SEXCITES.COM V17.4 LIVE & FULLY OPERATIONAL');
 });
 
 // Strict registration: 1 device = 1 account + 500 Free Limit Blocker (501+ requires payment first)
@@ -326,7 +326,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Front-End Interface with Striking Animated Background, English Default & Full Interactivity
+// Front-End Interface with Neon Hearts Background, Fully Interactive Wall, Real-time Chat & Inbox
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -339,11 +339,9 @@ app.get('*', (req, res) => {
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
 
-/* ULTRA STRIKING DYNAMIC MOVING BACKGROUND ANIMATION */
+/* PURE BLACK BACKGROUND WITH MOVING NEON HEARTS */
 body {
-  background: linear-gradient(125deg, #02040a, #0f0c29, #302b63, #24243e, #140316);
-  background-size: 500% 500%;
-  animation: dynamicBackgroundFlow 18s ease infinite;
+  background-color: #000000;
   color: #fff;
   min-height: 100vh;
   display: flex;
@@ -352,37 +350,14 @@ body {
   overflow-x: hidden;
   position: relative;
 }
-@keyframes dynamicBackgroundFlow {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
 
-/* GLOWING AMBIENT ORBS */
-.bg-glow-orb {
-  position: fixed;
-  border-radius: 50%;
-  filter: blur(100px);
-  z-index: 1;
-  pointer-events: none;
-  opacity: 0.55;
-  animation: orbFloatAnim 12s ease-in-out infinite alternate;
-}
-.orb1 { width: 380px; height: 380px; background: #ff2a6d; top: -100px; left: -100px; }
-.orb2 { width: 420px; height: 420px; background: #05d9e8; bottom: -120px; right: -120px; animation-delay: -6s; }
-.orb3 { width: 300px; height: 300px; background: #9d4edd; top: 40%; left: 60%; animation-delay: -3s; opacity: 0.3; }
-@keyframes orbFloatAnim {
-  0% { transform: translateY(0px) scale(1) rotate(0deg); }
-  100% { transform: translateY(45px) scale(1.15) rotate(15deg); }
-}
-
-/* FLOATING PARTICLES / HEARTS */
-.hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; overflow: hidden; }
-.heart { position: absolute; bottom: -50px; font-size: 22px; animation: floatUpParticle 7s linear infinite; filter: drop-shadow(0 0 10px rgba(255,42,109,0.8)); opacity: 0.85; }
+/* FLOATING NEON HEART PARTICLES CONTAINER */
+.hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: hidden; }
+.heart { position: absolute; bottom: -50px; font-size: 24px; animation: floatUpParticle 6s linear infinite; filter: drop-shadow(0 0 12px rgba(255,42,109,0.9)); opacity: 0.85; }
 @keyframes floatUpParticle {
-  0% { transform: translateY(0) scale(0.7) rotate(0deg); opacity: 0.9; }
-  50% { transform: translateY(-60vh) scale(1.1) rotate(180deg); opacity: 0.6; }
-  100% { transform: translateY(-115vh) scale(1.3) rotate(360deg); opacity: 0; }
+  0% { transform: translateY(0) scale(0.6) rotate(0deg); opacity: 0.9; }
+  50% { transform: translateY(-55vh) scale(1.15) rotate(180deg); opacity: 0.7; }
+  100% { transform: translateY(-110vh) scale(1.4) rotate(360deg); opacity: 0; }
 }
 
 /* SEXCITES 24/7 CUSTOM TRANSLATE WIDGET */
@@ -400,12 +375,6 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  animation: pulseGlowBox 3s infinite;
-}
-@keyframes pulseGlowBox {
-  0% { box-shadow: 0 0 12px rgba(255, 42, 109, 0.3); }
-  50% { box-shadow: 0 0 28px rgba(255, 42, 109, 0.85); }
-  100% { box-shadow: 0 0 12px rgba(255, 42, 109, 0.3); }
 }
 .translate-brand {
   font-size: 11px;
@@ -436,11 +405,11 @@ body { top: 0 !important; }
 .app-container {
   width: 100%;
   max-width: 480px;
-  background: rgba(14, 18, 42, 0.78);
+  background: rgba(10, 10, 15, 0.90);
   backdrop-filter: blur(28px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 24px;
-  box-shadow: 0 30px 60px rgba(0,0,0,0.7);
+  box-shadow: 0 30px 60px rgba(0,0,0,0.95);
   z-index: 10;
   padding: 24px;
   margin: 15px;
@@ -448,13 +417,13 @@ body { top: 0 !important; }
 h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; background: linear-gradient(90deg, #ff2a6d, #05d9e8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .subtitle { font-size: 11px; text-align: center; color: #a5b4fc; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px; }
 
-/* FOUNDER DEBUT INFO BOX */
+/* FOUNDER DEBUT INFO BOX (MOVED TO BOTTOM) */
 .founder-intro-box {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 42, 109, 0.3);
   border-radius: 14px;
   padding: 12px;
-  margin-bottom: 15px;
+  margin-top: 15px;
   font-size: 11px;
   color: #cbd5e1;
   line-height: 1.4;
@@ -476,12 +445,35 @@ h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; 
   font-weight: 600;
 }
 
+/* SPECIAL PHRASE & TERMS SECTION */
+.special-phrase-box {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff2a6d;
+  text-shadow: 0 0 12px rgba(255, 42, 109, 0.6);
+  letter-spacing: 0.5px;
+}
+
+.terms-footer {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 10px;
+  color: #64748b;
+  line-height: 1.3;
+}
+.terms-footer a {
+  color: #05d9e8;
+  text-decoration: none;
+}
+
 input {
   width: 100%;
   padding: 12px 16px;
   margin-bottom: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   color: #fff;
   font-size: 14px;
@@ -503,17 +495,12 @@ button {
 }
 button:active { transform: scale(0.98); }
 .hidden { display: none !important; }
-.box-section { margin-top: 15px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); }
+.box-section { margin-top: 15px; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); }
 .badge-free { background: rgba(34,197,94,0.2); color: #4ade80; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; display: inline-block; margin-bottom: 10px; }
-.wallet-box { font-family: monospace; font-size: 11px; background: rgba(0,0,0,0.45); padding: 8px; border-radius: 8px; margin: 6px 0; word-break: break-all; color: #05d9e8; }
+.wallet-box { font-family: monospace; font-size: 11px; background: rgba(0,0,0,0.55); padding: 8px; border-radius: 8px; margin: 6px 0; word-break: break-all; color: #05d9e8; }
 </style>
 </head>
 <body>
-
-<!-- BACKGROUND AMBIENT GLOW ORBS -->
-<div class="bg-glow-orb orb1"></div>
-<div class="bg-glow-orb orb2"></div>
-<div class="bg-glow-orb orb3"></div>
 
 <!-- SEXCITES 24/7 CUSTOM TRANSLATE WIDGET (Default English) -->
 <div class="translate-float">
@@ -532,27 +519,15 @@ button:active { transform: scale(0.98); }
 </script>
 <script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 
+<!-- FLOATING NEON HEARTS ANIMATION CONTAINER -->
 <div class="hearts-container" id="hearts"></div>
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private Community 18+ • Real-Time V17.1</div>
+  <div class="subtitle">Private Community 18+ • Real-Time V17.4</div>
 
   <!-- AUTH VIEW -->
   <div id="authView">
-    
-    <!-- FOUNDER DEBUT & FEATURE DESCRIPTION -->
-    <div class="founder-intro-box" id="founderIntroContainer">
-      <h3>🚀 Gran Debut Oficial (06-09-2026)</h3>
-      <p>Bienvenido al lanzamiento oficial de <b>SEXCITES.com</b>. Una comunidad privada diseñada para conectar sin límites.</p>
-      <ul style="padding-left:12px;">
-        <li><b>Funciones Principales:</b> Chat privado en tiempo real, muro interactivo con fotos, likes instantáneos, sistema de compartir y traducción multilingüe 24/7.</li>
-        <li><b>Próximas Actualizaciones:</b> Videollamadas HD, salas temáticas avanzadas y app móvil dedicada.</li>
-        <li><b>Precios más bajos</b> que en cualquier otro lugar del mercado, con accesos justos y transparentes en BTC y ETH.</li>
-      </ul>
-      <div class="founder-signature">Con toda la humildad hacia el futuro,<br><b>Jhon Gonzales (Fundador)</b></div>
-    </div>
-
     <div style="display:flex; gap:10px; margin-bottom:15px;">
       <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.12)">Register</button>
       <button onclick="switchTab('log')" id="btnLogTab">Sign In</button>
@@ -572,6 +547,29 @@ button:active { transform: scale(0.98); }
       <button onclick="loginUser()">Enter System</button>
     </div>
     <div id="authError" style="color:#f87171; font-size:12px; text-align:center; margin-top:10px;"></div>
+
+    <!-- FOUNDER DEBUT & FEATURE DESCRIPTION (MOVED TO BOTTOM) -->
+    <div class="founder-intro-box" id="founderIntroContainer">
+      <h3>🚀 Gran Debut Oficial (06-09-2026)</h3>
+      <p>Bienvenido al lanzamiento oficial de <b>SEXCITES.com</b>. Una comunidad privada diseñada para conectar sin límites.</p>
+      <ul style="padding-left:12px;">
+        <li><b>Funciones Principales:</b> Chat privado en tiempo real, muro interactivo con fotos, likes instantáneos, sistema de compartir y traducción multilingüe 24/7.</li>
+        <li><b>Próximas Actualizaciones:</b> Videollamadas HD, salas temáticas avanzadas y app móvil dedicada.</li>
+        <li><b>Precios más bajos</b> que en cualquier otro lugar del mercado, con accesos justos y transparentes en BTC y ETH.</li>
+      </ul>
+      <div class="founder-signature">Con toda la humildad hacia el futuro,<br><b>Jhon Gonzales (Fundador)</b></div>
+    </div>
+
+    <!-- SPECIAL PHRASE -->
+    <div class="special-phrase-box">
+      ✨ "Date una oportunidad en la vida nunca es tarde" ✨
+    </div>
+
+    <!-- TERMS AND CONDITIONS -->
+    <div class="terms-footer">
+      Al registrarte aceptas nuestros <a href="#" onclick="alert('Términos y Condiciones: Plataforma exclusiva para mayores de 18 años. Privacidad garantizada y uso seguro bajo estricto control de dispositivo.'); return false;">Términos y Condiciones</a> y Política de Privacidad. © 2026 SEXCITES.com.
+    </div>
+
   </div>
 
   <!-- DASHBOARD VIEW -->
@@ -594,7 +592,7 @@ button:active { transform: scale(0.98); }
       <input type="text" id="friendInput" placeholder="Add friend by username (ex: @lenoxjg)" autocomplete="off">
       <button onclick="sendFriendRequest()" style="margin-bottom:12px; font-size:12px;">Send Friend Request</button>
       <div style="font-size:12px; color:#cbd5e1; margin-bottom:6px;"><b>Pending Friend Requests:</b></div>
-      <div id="inboxList" style="background:rgba(0,0,0,0.35); border-radius:8px; padding:8px; max-height:140px; overflow-y:auto; font-size:12px;">
+      <div id="inboxList" style="background:rgba(0,0,0,0.45); border-radius:8px; padding:8px; max-height:140px; overflow-y:auto; font-size:12px;">
         <span id="noReq" style="color:#94a3b8;">No pending requests</span>
       </div>
     </div>
@@ -606,7 +604,7 @@ button:active { transform: scale(0.98); }
         <input type="text" id="msgPeerUsername" placeholder="Friend Username (ex: @user)" autocomplete="off" style="margin:0;">
         <button onclick="loadChatHistory()" style="width:110px; margin:0; font-size:11px;">Load History</button>
       </div>
-      <div id="chatBox" style="height:150px; background:rgba(0,0,0,0.35); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;">
+      <div id="chatBox" style="height:150px; background:rgba(0,0,0,0.45); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;">
         <div style="color:#94a3b8; text-align:center; padding-top:40px;">Enter friend username above & load history.</div>
       </div>
       <div style="display:flex; gap:6px;">
@@ -619,7 +617,7 @@ button:active { transform: scale(0.98); }
 
     <!-- 3. WALL SECTION (Interactive Posts, Likes, Comments, Photos & Share) -->
     <div id="secWall" class="box-section hidden">
-      <textarea id="wallText" placeholder="What's on your mind on SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
+      <textarea id="wallText" placeholder="What's on your mind on SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
       <div style="display:flex; gap:6px; margin-bottom:10px;">
         <input type="file" id="wallImageInput" accept="image/*" style="display:none;" onchange="previewWallImage(event)">
         <button onclick="document.getElementById('wallImageInput').click()" style="width:auto; padding:8px 12px; font-size:11px; background:#334155;">📷 Add Photo</button>
@@ -644,7 +642,7 @@ button:active { transform: scale(0.98); }
       </select>
       
       <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Get Code & Instructions</button>
-      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.45); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate code and send screenshot to po80payments@gmail.com</div>
+      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.55); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate code and send screenshot to po80payments@gmail.com</div>
       
       <input type="text" id="redeemInput" placeholder="Redeem Code SEXCITES-XXXX" autocomplete="off">
       <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Redeem VIP Months</button>
@@ -659,19 +657,20 @@ let currentUser = null;
 let currentPeerId = null;
 let attachedWallImage = null;
 
+// GENERATE DYNAMIC FLOATING NEON HEARTS
 function createHeart() {
   const container = document.getElementById('hearts');
   if(!container) return;
   const heart = document.createElement('div');
   heart.className = 'heart';
-  const symbols = ['💖', '💗', '✨', '🔥', '💎'];
+  const symbols = ['💖', '💗', '❤️', '🔥', '✨'];
   heart.innerHTML = symbols[Math.floor(Math.random() * symbols.length)];
   heart.style.left = Math.random() * 100 + 'vw';
-  heart.style.animationDuration = (5 + Math.random() * 4) + 's';
+  heart.style.animationDuration = (4.5 + Math.random() * 4) + 's';
   container.appendChild(heart);
   setTimeout(() => { heart.remove(); }, 8000);
 }
-setInterval(createHeart, 500);
+setInterval(createHeart, 350);
 
 function switchTab(tab) {
   if(tab === 'reg') {
@@ -900,7 +899,7 @@ function renderSinglePost(p) {
   const feed = document.getElementById('wallFeed');
   const div = document.createElement('div');
   div.id = 'post_' + p.id;
-  div.style.cssText = "background:rgba(255,255,255,0.04); padding:10px; border-radius:10px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.08);";
+  div.style.cssText = "background:rgba(255,255,255,0.03); padding:10px; border-radius:10px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.06);";
   
   let imgHTML = p.image ? '<br><img src="' + p.image + '" style="max-width:100%; border-radius:8px; margin-top:6px;">' : '';
   let likesCount = p.likesCount !== undefined ? p.likesCount : (p.likes ? p.likes.length : 0);
@@ -1032,5 +1031,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V17.1 running on port ' + PORT);
+  console.log('SEXCITES.COM V17.4 running on port ' + PORT);
 });

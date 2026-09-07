@@ -164,7 +164,7 @@ app.get('/api/init-data', (req, res) => {
 });
 
 // ==========================================
-// WEBSOCKETS (TIEMPO REAL OPTIMIZADO)
+// WEBSOCKETS (TIEMPO REAL INSTANTÁNEO)
 // ==========================================
 io.on('connection', (socket) => {
   socket.on('join', (username) => {
@@ -273,7 +273,7 @@ io.on('connection', (socket) => {
 });
 
 // ==========================================
-// INTERFAZ FRONT-END MODERNA CON CORAZONES DE NEÓN
+// FRONT-END INTEGRADO CON CORAZONES DE NEÓN Y CYBER-NÚMEROS
 // ==========================================
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
@@ -398,7 +398,7 @@ button:hover { opacity: 0.9; }
 
 .space-section { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 16px; }
 
-/* MURO ESPACIOSO */
+/* MURO SOCIAL ESPACIOSO */
 .post-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 16px; border-radius: 14px; margin-bottom: 14px; }
 .post-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .post-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #ff2a6d; }
@@ -536,13 +536,13 @@ button:hover { opacity: 0.9; }
 </div>
 
 <script>
-// ==========================================
-// MOTOR DE CORAZONES DE NEÓN EN TIEMPO REAL
-// ==========================================
+// ==========================================================
+// MOTOR GRÁFICO: CORAZONES DE NEÓN + CYBER NÚMEROS EN VIVO
+// ==========================================================
 const canvas = document.getElementById('bgCanvas');
 const ctx = canvas.getContext('2d');
-let hearts = [];
-const heartCount = 30;
+let elements = [];
+const totalElements = 60;
 
 function resizeCanvas() {
   canvas.width = window.innerWidth;
@@ -551,64 +551,71 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-for (let i = 0; i < heartCount; i++) {
-  hearts.push({
+// Inicializar partículas mixtas en movimiento constante (60% corazones neón, 40% cyber números)
+for (let i = 0; i < totalElements; i++) {
+  elements.push({
     x: Math.random() * canvas.width,
     y: Math.random() * canvas.height,
-    size: Math.random() * 14 + 8,
-    speedY: (Math.random() * 0.8 + 0.3) * -1, // Suben flotando suavemente
-    speedX: (Math.random() - 0.5) * 0.5,
-    opacity: Math.random() * 0.6 + 0.2,
-    color: Math.random() > 0.3 ? '#ff2a6d' : '#05d9e8', // Tonos neón rosa cian
-    pulse: Math.random() * 0.02 + 0.01,
+    size: Math.random() * 16 + 10,
+    speedY: (Math.random() * 0.9 + 0.3) * -1,
+    speedX: (Math.random() - 0.5) * 0.6,
+    opacity: Math.random() * 0.7 + 0.3,
+    color: Math.random() > 0.4 ? '#ff2a6d' : '#05d9e8',
+    isHeart: Math.random() > 0.4,
+    char: Math.floor(Math.random() * 10),
+    pulse: Math.random() * 0.03 + 0.01,
     pulseVal: Math.random() * Math.PI
   });
-}
-
-function drawNeonHeart(x, y, size, color, opacity) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.translate(x, y);
-  
-  // Efecto resplandor neón real
-  ctx.shadowBlur = 18;
-  ctx.shadowColor = color;
-  ctx.fillStyle = color;
-  ctx.globalAlpha = opacity;
-
-  const d = size;
-  ctx.moveTo(0, d / 4);
-  ctx.bezierCurveTo(d / 2, -d / 2, d, d / 3, 0, d);
-  ctx.bezierCurveTo(-d, d / 3, -d / 2, -d / 2, 0, d / 4);
-  ctx.fill();
-  ctx.restore();
 }
 
 function animateBackground() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  hearts.forEach(h => {
-    h.y += h.speedY;
-    h.x += h.speedX;
-    h.pulseVal += h.pulse;
-    
-    // Animación de pulso de tamaño
-    let currentSize = h.size + Math.sin(h.pulseVal) * 2;
+  elements.forEach(el => {
+    el.y += el.speedY;
+    el.x += el.speedX;
+    el.pulseVal += el.pulse;
+    let currSize = el.size + Math.sin(el.pulseVal) * 2;
 
-    // Reciclar corazón cuando sale por arriba de la pantalla
-    if (h.y < -30) {
-      h.y = canvas.height + 30;
-      h.x = Math.random() * canvas.width;
+    // Reciclar elementos al salir de pantalla
+    if (el.y < -30) {
+      el.y = canvas.height + 30;
+      el.x = Math.random() * canvas.width;
     }
-    if (h.x < -30) h.x = canvas.width + 30;
-    if (h.x > canvas.width + 30) h.x = -30;
+    if (el.x < -30) el.x = canvas.width + 30;
+    if (el.x > canvas.width + 30) el.x = -30;
 
-    drawNeonHeart(h.x, h.y, currentSize, h.color, h.opacity);
+    ctx.save();
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = el.color;
+    ctx.globalAlpha = el.opacity;
+
+    if (el.isHeart) {
+      // Dibujar Corazón de Neón en movimiento real
+      ctx.beginPath();
+      ctx.translate(el.x, el.y);
+      ctx.fillStyle = el.color;
+      const d = currSize;
+      ctx.moveTo(0, d / 4);
+      ctx.bezierCurveTo(d / 2, -d / 2, d, d / 3, 0, d);
+      ctx.bezierCurveTo(-d, d / 3, -d / 2, -d / 2, 0, d / 4);
+      ctx.fill();
+    } else {
+      // Dibujar Cyber Número dinámico en tiempo real
+      if (Math.random() < 0.2) {
+        el.char = Math.floor(Math.random() * 10);
+      }
+      ctx.font = 'bold ' + Math.floor(currSize) + 'px "Courier New", monospace';
+      ctx.fillStyle = el.color;
+      ctx.fillText(el.char, el.x, el.y);
+    }
+    ctx.restore();
   });
 
   requestAnimationFrame(animateBackground);
 }
-animateBackground();
+
+requestAnimationFrame(animateBackground);
 
 // Aplicación y WebSockets
 const socket = io();
@@ -631,10 +638,10 @@ function updateCounterBanner(total) {
   const plansContainer = document.getElementById('plansContainer');
   
   if (total < 500) {
-    banner.innerHTML = \`🎉 <b>Promoción de Lanzamiento:</b> Quedan <b>\${500 - total}</b> cuentas gratis (2 meses sin costo).\`;
+    banner.innerHTML = '🎉 <b>Promoción de Lanzamiento:</b> Quedan <b>' + (500 - total) + '</b> cuentas gratis (2 meses sin costo).';
     plansContainer.classList.add('hidden');
   } else {
-    banner.innerHTML = \`⚠️ <b>Cupo de lanzamiento lleno (500/500).</b> Las nuevas cuentas requieren plan de pago.\`;
+    banner.innerHTML = '⚠️ <b>Cupo de lanzamiento lleno (500/500).</b> Las nuevas cuentas requieren plan de pago.';
     plansContainer.classList.remove('hidden');
   }
 }
@@ -780,33 +787,33 @@ function appendPostToDOM(p, prepend = false) {
   div.className = 'post-card';
   div.id = 'post_' + p.id;
 
-  let imageHtml = p.image ? \`<img src="\${p.image}" class="post-img-preview">\` : '';
-  let commentsHtml = \`<div id="comm_list_\${p.id}" style="margin-top:10px; padding-left:10px; border-left:2px solid #ff2a6d; display:flex; flex-direction:column; gap:6px;">\`;
+  let imageHtml = p.image ? '<img src="' + p.image + '" class="post-img-preview">' : '';
+  let commentsHtml = '<div id="comm_list_' + p.id + '" style="margin-top:10px; padding-left:10px; border-left:2px solid #ff2a6d; display:flex; flex-direction:column; gap:6px;">';
   if (p.comments) {
     p.comments.forEach(c => {
-      commentsHtml += \`<div style="font-size:12px;"><b style="color:#05d9e8;">@\${c.author}:</b> \${c.text}</div>\`;
+      commentsHtml += '<div style="font-size:12px;"><b style="color:#05d9e8;">@' + c.author + ':</b> ' + c.text + '</div>';
     });
   }
   commentsHtml += '</div>';
 
-  div.innerHTML = \`<div class="post-header">
-                     <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" class="post-avatar">
-                     <div>
-                       <b style="color:#ff2a6d; font-size:13px;">@\${p.author}</b>
-                       <div style="font-size:10px; color:#94a3b8;">Hace un momento</div>
-                     </div>
-                   </div>
-                   \${p.text ? \`<p style="color:#e2e8f0; margin-top:6px; font-size:13px; line-height:1.4;">\${p.text}</p>\` : ''}
-                   \${imageHtml}
-                   <div style="display:flex; gap:12px; margin-top:10px; align-items:center;">
-                     <button onclick="toggleLike('\${p.id}')" style="width:auto; background:none; border:none; color:\${p.userHasLiked ? '#ff2a6d':'#94a3b8'}; cursor:pointer; font-size:12px; font-weight:700;">❤️ <span id="likes_\${p.id}">\${p.likesCount}</span> Likes</button>
-                     <button onclick="openChatWithUser('\${p.author}')" style="width:auto; background:rgba(5,217,232,0.1); border:1px solid rgba(5,217,232,0.3); color:#05d9e8; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer;">💬 Mensaje Privado</button>
-                   </div>
-                   \${commentsHtml}
-                   <div style="display:flex; gap:6px; margin-top:10px;">
-                     <input type="text" id="comm_txt_\${p.id}" placeholder="Escribe un comentario..." style="margin:0; font-size:11px; padding:8px;" autocomplete="off">
-                     <button onclick="sendComment('\${p.id}')" style="width:75px; margin:0; padding:8px; font-size:11px;">Comentar</button>
-                   </div>\`;
+  div.innerHTML = '<div class="post-header">' +
+                     '<img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" class="post-avatar">' +
+                     '<div>' +
+                       '<b style="color:#ff2a6d; font-size:13px;">@' + p.author + '</b>' +
+                       '<div style="font-size:10px; color:#94a3b8;">Hace un momento</div>' +
+                     '</div>' +
+                   '</div>' +
+                   (p.text ? '<p style="color:#e2e8f0; margin-top:6px; font-size:13px; line-height:1.4;">' + p.text + '</p>' : '') +
+                   imageHtml +
+                   '<div style="display:flex; gap:12px; margin-top:10px; align-items:center;">' +
+                     '<button onclick="toggleLike(\'' + p.id + '\')" style="width:auto; background:none; border:none; color:' + (p.userHasLiked ? '#ff2a6d':'#94a3b8') + '; cursor:pointer; font-size:12px; font-weight:700;">❤️ <span id="likes_' + p.id + '">' + p.likesCount + '</span> Likes</button>' +
+                     '<button onclick="openChatWithUser(\'' + p.author + '\')" style="width:auto; background:rgba(5,217,232,0.1); border:1px solid rgba(5,217,232,0.3); color:#05d9e8; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer;">💬 Mensaje Privado</button>' +
+                   '</div>' +
+                   commentsHtml +
+                   '<div style="display:flex; gap:6px; margin-top:10px;">' +
+                     '<input type="text" id="comm_txt_' + p.id + '" placeholder="Escribe un comentario..." style="margin:0; font-size:11px; padding:8px;" autocomplete="off">' +
+                     '<button onclick="sendComment(\'' + p.id + '\')" style="width:75px; margin:0; padding:8px; font-size:11px;">Comentar</button>' +
+                   '</div>';
 
   if (prepend) feed.appendChild(div);
   else feed.insertBefore(div, feed.firstChild);
@@ -832,7 +839,7 @@ function sendComment(postId) {
 socket.on('post:commented', (data) => {
   const list = document.getElementById('comm_list_' + data.postId);
   if (list) {
-    list.innerHTML += \`<div style="font-size:12px;"><b style="color:#05d9e8;">@\${data.comment.author}:</b> \${data.comment.text}</div>\`;
+    list.innerHTML += '<div style="font-size:12px;"><b style="color:#05d9e8;">@' + data.comment.author + ':</b> ' + data.comment.text + '</div>';
   }
 });
 
@@ -870,35 +877,35 @@ socket.on('match:success', (data) => {
 function openChatWithUser(username) {
   switchSpace('chat');
   currentChatPeer = username.trim().toLowerCase().replace('@', '');
-  document.getElementById('chatHeaderInfo').innerHTML = \`Chat en vivo con @\${currentChatPeer}\`;
+  document.getElementById('chatHeaderInfo').innerHTML = 'Chat en vivo con @' + currentChatPeer;
   socket.emit('chat:load', { user1: currentUser.username, user2: currentChatPeer });
 }
 
 function renderActiveChats(chats) {
   const container = document.getElementById('chatContactsList');
   if (!chats || chats.length === 0) {
-    container.innerHTML = \`<div style="color: #64748b; font-size: 11px; text-align: center; padding-top: 20px;">Sin chats activos</div>\`;
+    container.innerHTML = '<div style="color: #64748b; font-size: 11px; text-align: center; padding-top: 20px;">Sin chats activos</div>';
     return;
   }
   container.innerHTML = '';
   chats.forEach(c => {
-    container.innerHTML += \`<div class="chat-contact-item" onclick="openChatWithUser('\${c.peer}')">
-      <img src="\${c.avatar}" style="width:32px; height:32px; border-radius:50%; object-fit:cover;">
-      <div style="overflow:hidden;">
-        <div style="font-size:12px; font-weight:700; color:#05d9e8;">@\${c.peer}</div>
-        <div style="font-size:10px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">\${c.lastMessage}</div>
-      </div>
-    </div>\`;
+    container.innerHTML += '<div class="chat-contact-item" onclick="openChatWithUser(\'' + c.peer + '\')">' +
+      '<img src="' + c.avatar + '" style="width:32px; height:32px; border-radius:50%; object-fit:cover;">' +
+      '<div style="overflow:hidden;">' +
+        '<div style="font-size:12px; font-weight:700; color:#05d9e8;">@' + c.peer + '</div>' +
+        '<div style="font-size:10px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + c.lastMessage + '</div>' +
+      '</div>' +
+    '</div>';
   });
 }
 
 socket.on('chat:history-loaded', (data) => {
   currentChatPeer = data.peer;
-  document.getElementById('chatHeaderInfo').innerHTML = \`💬 Conversación en vivo con @\${data.peer}\`;
+  document.getElementById('chatHeaderInfo').innerHTML = '💬 Conversación en vivo con @' + data.peer;
   const box = document.getElementById('chatBox');
   box.innerHTML = '';
   if (data.history.length === 0) {
-    box.innerHTML = \`<div style="color:#64748b; text-align:center; margin:auto;">Inicia la conversación con @\${data.peer} ahora mismo.</div>\`;
+    box.innerHTML = '<div style="color:#64748b; text-align:center; margin:auto;">Inicia la conversación con @' + data.peer + ' ahora mismo.</div>';
     return;
   }
   data.history.forEach(m => appendMsgToDOM(m));
@@ -934,7 +941,7 @@ function appendMsgToDOM(m) {
 
   const div = document.createElement('div');
   div.className = 'msg-bubble ' + (isMe ? 'msg-me' : 'msg-peer');
-  div.innerHTML = \`<div style="font-size:10px; opacity:0.8; margin-bottom:2px;">@\${m.sender}</div><div>\${m.text}</div>\`;
+  div.innerHTML = '<div style="font-size:10px; opacity:0.8; margin-bottom:2px;">@' + m.sender + '</div><div>' + m.text + '</div>';
   box.appendChild(div);
   box.scrollTop = box.scrollHeight;
 }
@@ -947,5 +954,5 @@ socket.on('error-msg', (data) => { alert(data.message); });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM Cloud OS con Corazones de Neón activo en el puerto ' + PORT);
+  console.log('SEXCITES.COM Cloud OS con Corazones de Neón y Cyber-Números activo en el puerto ' + PORT);
 });

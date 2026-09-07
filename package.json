@@ -1,8 +1,16 @@
 {
-  "name": "sexcites-v8-premium-best-quality",
-  "version": "8.0.0",
+  "name": "sexcites.com -first launch  ",
+  "version": "9.0.0",
+  "description": "SEXCITES.COM Low prices for web launch ",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "dependencies": { "express": "4.18.2", "socket.io": "4.7.2" },
-  "engines": { "node": "20.x" }
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "4.18.2",
+    "socket.io": "4.7.2"
+  },
+  "engines": {
+    "node": "20.x"
+  }
 }

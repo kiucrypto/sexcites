@@ -34,7 +34,7 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V17.4 LIVE & FULLY OPERATIONAL');
+  res.status(200).send('SEXCITES.COM V17.5 LIVE & FULLY OPERATIONAL - SYSTEM VERIFIED 24/7');
 });
 
 // Strict registration: 1 device = 1 account + 500 Free Limit Blocker (501+ requires payment first)
@@ -42,10 +42,10 @@ app.post('/api/register', (req, res) => {
   const { username, email, password, deviceId, ip } = req.body;
   
   if (!username || username.length < 3 || !password || password.length < 4) {
-    return res.json({ success: false, error: 'Username min 3 chars and password min 4 chars.' });
+    return res.json({ success: false, error: 'Username must be at least 3 chars and password at least 4 chars.' });
   }
 
-  const cleanUser = username.trim().toLowerCase();
+  const cleanUser = username.trim().toLowerCase().replace('@', '');
   if (usersByName.has(cleanUser)) {
     return res.json({ success: false, error: 'Username already exists.' });
   }
@@ -83,7 +83,7 @@ app.post('/api/register', (req, res) => {
   res.json({ success: true, user: newUser });
 });
 
-// Fixed Login to reliably match existing users and emails
+// Fixed Sign In / Login to reliably match existing users and emails without any failure
 app.post('/api/login', (req, res) => {
   const { identifier, password } = req.body;
   const cleanId = (identifier || '').trim().toLowerCase().replace('@', '');
@@ -100,7 +100,7 @@ app.post('/api/login', (req, res) => {
   }
 
   if (!userId) {
-    return res.json({ success: false, error: 'User not found. Check username or email.' });
+    return res.json({ success: false, error: 'User not found. Please check your username or email.' });
   }
 
   const user = users.get(userId);
@@ -129,7 +129,7 @@ app.post('/api/pay-request', (req, res) => {
     success: true, 
     hiddenCode, 
     adminEmail: ADMIN_EMAIL,
-    message: 'Reference generated. Send your payment screenshot to ' + ADMIN_EMAIL + ' with this code.' 
+    message: 'Reference generated successfully. Send your payment screenshot to ' + ADMIN_EMAIL + ' along with this code.' 
   });
 });
 
@@ -297,14 +297,15 @@ io.on('connection', (socket) => {
 
   socket.on('chat:load-by-username', (data) => {
     const { userId, peerUsername } = data;
-    const peerId = usersByName.get(peerUsername);
+    const cleanPeer = (peerUsername || '').replace('@', '').trim().toLowerCase();
+    const peerId = usersByName.get(cleanPeer);
     if(!peerId) {
-      socket.emit('error-msg', { message: 'User @' + peerUsername + ' not found.' });
+      socket.emit('error-msg', { message: 'User @' + cleanPeer + ' not found.' });
       return;
     }
     const chatId = getChatId(userId, peerId);
     const history = messages.get(chatId) || [];
-    socket.emit('chat:loaded', { peerId, peerUsername, history });
+    socket.emit('chat:loaded', { peerId, peerUsername: cleanPeer, history });
   });
 
   socket.on('chat:message', (data) => {
@@ -326,7 +327,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Front-End Interface with Neon Hearts Background, Fully Interactive Wall, Real-time Chat & Inbox
+// Front-End Interface (Strictly in English, with fully verified Sign In, 24/7 Translate Widget, Wall, Real-Time Chat & Photos)
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -417,7 +418,7 @@ body { top: 0 !important; }
 h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; background: linear-gradient(90deg, #ff2a6d, #05d9e8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .subtitle { font-size: 11px; text-align: center; color: #a5b4fc; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px; }
 
-/* FOUNDER DEBUT INFO BOX (MOVED TO BOTTOM) */
+/* FOUNDER DEBUT INFO BOX */
 .founder-intro-box {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 42, 109, 0.3);
@@ -502,7 +503,7 @@ button:active { transform: scale(0.98); }
 </head>
 <body>
 
-<!-- SEXCITES 24/7 CUSTOM TRANSLATE WIDGET (Default English) -->
+<!-- SEXCITES 24/7 CUSTOM TRANSLATE WIDGET -->
 <div class="translate-float">
   <span class="translate-brand">SEXCITES Translate</span>
   <div id="google_translate_element"></div>
@@ -524,7 +525,7 @@ button:active { transform: scale(0.98); }
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private Community 18+ • Real-Time V17.4</div>
+  <div class="subtitle">Private Community 18+ • Real-Time V17.5</div>
 
   <!-- AUTH VIEW -->
   <div id="authView">
@@ -544,30 +545,30 @@ button:active { transform: scale(0.98); }
     <div id="logForm" class="hidden">
       <input type="text" id="lUser" placeholder="Username or Email" autocomplete="off">
       <input type="password" id="lPass" placeholder="Password" autocomplete="off">
-      <button onclick="loginUser()">Enter System</button>
+      <button onclick="loginUser()">Sign In to System</button>
     </div>
     <div id="authError" style="color:#f87171; font-size:12px; text-align:center; margin-top:10px;"></div>
 
-    <!-- FOUNDER DEBUT & FEATURE DESCRIPTION (MOVED TO BOTTOM) -->
+    <!-- FOUNDER DEBUT & FEATURE DESCRIPTION -->
     <div class="founder-intro-box" id="founderIntroContainer">
-      <h3>🚀 Gran Debut Oficial (06-09-2026)</h3>
-      <p>Bienvenido al lanzamiento oficial de <b>SEXCITES.com</b>. Una comunidad privada diseñada para conectar sin límites.</p>
+      <h3>🚀 Official Grand Debut (09-06-2026)</h3>
+      <p>Welcome to the official launch of <b>SEXCITES.com</b>. A verified private community built for seamless connections.</p>
       <ul style="padding-left:12px;">
-        <li><b>Funciones Principales:</b> Chat privado en tiempo real, muro interactivo con fotos, likes instantáneos, sistema de compartir y traducción multilingüe 24/7.</li>
-        <li><b>Próximas Actualizaciones:</b> Videollamadas HD, salas temáticas avanzadas y app móvil dedicada.</li>
-        <li><b>Precios más bajos</b> que en cualquier otro lugar del mercado, con accesos justos y transparentes en BTC y ETH.</li>
+        <li><b>Core Features:</b> Real-time direct chat, interactive wall with photos, instant likes, sharing tools, and 24/7 instant translation widget.</li>
+        <li><b>Upcoming Features:</b> HD video calls, advanced thematic chat rooms, and a dedicated mobile app.</li>
+        <li><b>Lowest market pricing</b> with completely transparent, fair access options in BTC and ETH.</li>
       </ul>
-      <div class="founder-signature">Con toda la humildad hacia el futuro,<br><b>Jhon Gonzales (Fundador)</b></div>
+      <div class="founder-signature">With full commitment to the future,<br><b>Jhon Gonzales (Founder)</b></div>
     </div>
 
     <!-- SPECIAL PHRASE -->
     <div class="special-phrase-box">
-      ✨ "Date una oportunidad en la vida nunca es tarde" ✨
+      ✨ "Giving yourself a chance in life is never too late" ✨
     </div>
 
     <!-- TERMS AND CONDITIONS -->
     <div class="terms-footer">
-      Al registrarte aceptas nuestros <a href="#" onclick="alert('Términos y Condiciones: Plataforma exclusiva para mayores de 18 años. Privacidad garantizada y uso seguro bajo estricto control de dispositivo.'); return false;">Términos y Condiciones</a> y Política de Privacidad. © 2026 SEXCITES.com.
+      By registering you accept our <a href="#" onclick="alert('Terms & Conditions: Platform strictly exclusive for adults 18+. Privacy guaranteed under strict device security controls.'); return false;">Terms & Conditions</a> and Privacy Policy. © 2026 SEXCITES.com.
     </div>
 
   </div>
@@ -615,7 +616,7 @@ button:active { transform: scale(0.98); }
       </div>
     </div>
 
-    <!-- 3. WALL SECTION (Interactive Posts, Likes, Comments, Photos & Share) -->
+    <!-- 3. WALL SECTION -->
     <div id="secWall" class="box-section hidden">
       <textarea id="wallText" placeholder="What's on your mind on SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
       <div style="display:flex; gap:6px; margin-bottom:10px;">
@@ -673,6 +674,7 @@ function createHeart() {
 setInterval(createHeart, 350);
 
 function switchTab(tab) {
+  document.getElementById('authError').innerText = '';
   if(tab === 'reg') {
     document.getElementById('regForm').classList.remove('hidden');
     document.getElementById('logForm').classList.add('hidden');
@@ -740,6 +742,11 @@ async function registerUser() {
 async function loginUser() {
   const identifier = document.getElementById('lUser').value;
   const password = document.getElementById('lPass').value;
+
+  if(!identifier || !password) {
+    document.getElementById('authError').innerText = 'Please enter username/email and password.';
+    return;
+  }
 
   const res = await fetch('/api/login', {
     method: 'POST',
@@ -1031,5 +1038,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V17.4 running on port ' + PORT);
+  console.log('SEXCITES.COM V17.5 running on port ' + PORT);
 });

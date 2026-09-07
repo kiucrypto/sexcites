@@ -34,7 +34,7 @@ function getChatId(id1, id2) {
 // REST API ENDPOINTS
 // ==========================================
 app.get('/health', (req, res) => {
-  res.status(200).send('SEXCITES.COM V17 LIVE & FULLY OPERATIONAL');
+  res.status(200).send('SEXCITES.COM V17.1 LIVE & FULLY OPERATIONAL');
 });
 
 // Strict registration: 1 device = 1 account + 500 Free Limit Blocker (501+ requires payment first)
@@ -67,7 +67,7 @@ app.post('/api/register', (req, res) => {
   const newUser = {
     id: userId,
     username: cleanUser,
-    email: email || '',
+    email: (email || '').trim().toLowerCase(),
     password: password,
     isFree: true,
     vipMonths: 2, // 2 Months Free for users 1 to 500
@@ -83,15 +83,16 @@ app.post('/api/register', (req, res) => {
   res.json({ success: true, user: newUser });
 });
 
-// Login
+// Fixed Login to reliably match existing users and emails
 app.post('/api/login', (req, res) => {
   const { identifier, password } = req.body;
-  const cleanId = (identifier || '').trim().toLowerCase();
+  const cleanId = (identifier || '').trim().toLowerCase().replace('@', '');
   
   let userId = usersByName.get(cleanId);
+  
   if (!userId) {
     for (let [uId, uObj] of users.entries()) {
-      if (uObj.email.toLowerCase() === cleanId) {
+      if (uObj.email === cleanId || uObj.username === cleanId) {
         userId = uId;
         break;
       }
@@ -99,7 +100,7 @@ app.post('/api/login', (req, res) => {
   }
 
   if (!userId) {
-    return res.json({ success: false, error: 'Invalid credentials.' });
+    return res.json({ success: false, error: 'User not found. Check username or email.' });
   }
 
   const user = users.get(userId);
@@ -325,7 +326,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Front-End Interface with Founder Debut Description, Dynamic Background & Full Wall Interactivity
+// Front-End Interface with Striking Animated Background, English Default & Full Interactivity
 app.get('*', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -338,11 +339,11 @@ app.get('*', (req, res) => {
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
 
-/* DYNAMIC MOVING BACKGROUND ANIMATION */
+/* ULTRA STRIKING DYNAMIC MOVING BACKGROUND ANIMATION */
 body {
-  background: linear-gradient(135deg, #070913 0%, #101538 50%, #1f0b24 100%);
-  background-size: 400% 400%;
-  animation: gradientBG 15s ease infinite;
+  background: linear-gradient(125deg, #02040a, #0f0c29, #302b63, #24243e, #140316);
+  background-size: 500% 500%;
+  animation: dynamicBackgroundFlow 18s ease infinite;
   color: #fff;
   min-height: 100vh;
   display: flex;
@@ -351,34 +352,37 @@ body {
   overflow-x: hidden;
   position: relative;
 }
-@keyframes gradientBG {
+@keyframes dynamicBackgroundFlow {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
 
-/* FLOATING GLOW ORBS IN BACKGROUND */
+/* GLOWING AMBIENT ORBS */
 .bg-glow-orb {
   position: fixed;
   border-radius: 50%;
-  filter: blur(80px);
+  filter: blur(100px);
   z-index: 1;
   pointer-events: none;
-  opacity: 0.4;
-  animation: orbFloat 10s ease-in-out infinite alternate;
+  opacity: 0.55;
+  animation: orbFloatAnim 12s ease-in-out infinite alternate;
 }
-.orb1 { width: 300px; height: 300px; background: #ff758c; top: -50px; left: -50px; }
-.orb2 { width: 350px; height: 350px; background: #38bdf8; bottom: -80px; right: -80px; animation-delay: -5s; }
-@keyframes orbFloat {
-  0% { transform: translateY(0px) scale(1); }
-  100% { transform: translateY(30px) scale(1.1); }
+.orb1 { width: 380px; height: 380px; background: #ff2a6d; top: -100px; left: -100px; }
+.orb2 { width: 420px; height: 420px; background: #05d9e8; bottom: -120px; right: -120px; animation-delay: -6s; }
+.orb3 { width: 300px; height: 300px; background: #9d4edd; top: 40%; left: 60%; animation-delay: -3s; opacity: 0.3; }
+@keyframes orbFloatAnim {
+  0% { transform: translateY(0px) scale(1) rotate(0deg); }
+  100% { transform: translateY(45px) scale(1.15) rotate(15deg); }
 }
 
+/* FLOATING PARTICLES / HEARTS */
 .hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; overflow: hidden; }
-.heart { position: absolute; bottom: -50px; font-size: 20px; animation: floatUp 6s linear infinite; filter: drop-shadow(0 0 8px rgba(255,105,180,0.6)); opacity: 0.8; }
-@keyframes floatUp {
-  0% { transform: translateY(0) scale(0.8); opacity: 0.8; }
-  100% { transform: translateY(-110vh) scale(1.2); opacity: 0; }
+.heart { position: absolute; bottom: -50px; font-size: 22px; animation: floatUpParticle 7s linear infinite; filter: drop-shadow(0 0 10px rgba(255,42,109,0.8)); opacity: 0.85; }
+@keyframes floatUpParticle {
+  0% { transform: translateY(0) scale(0.7) rotate(0deg); opacity: 0.9; }
+  50% { transform: translateY(-60vh) scale(1.1) rotate(180deg); opacity: 0.6; }
+  100% { transform: translateY(-115vh) scale(1.3) rotate(360deg); opacity: 0; }
 }
 
 /* SEXCITES 24/7 CUSTOM TRANSLATE WIDGET */
@@ -386,27 +390,27 @@ body {
   position: fixed;
   top: 15px;
   right: 15px;
-  background: rgba(18, 22, 48, 0.95);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 117, 140, 0.6);
+  background: rgba(12, 16, 38, 0.9);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 42, 109, 0.5);
   padding: 6px 14px;
   border-radius: 30px;
-  box-shadow: 0 4px 20px rgba(255, 117, 140, 0.4);
+  box-shadow: 0 4px 25px rgba(255, 42, 109, 0.4);
   z-index: 9999;
   display: flex;
   align-items: center;
   gap: 8px;
-  animation: pulseGlow 3s infinite;
+  animation: pulseGlowBox 3s infinite;
 }
-@keyframes pulseGlow {
-  0% { box-shadow: 0 0 10px rgba(255, 117, 140, 0.3); }
-  50% { box-shadow: 0 0 24px rgba(255, 117, 140, 0.8); }
-  100% { box-shadow: 0 0 10px rgba(255, 117, 140, 0.3); }
+@keyframes pulseGlowBox {
+  0% { box-shadow: 0 0 12px rgba(255, 42, 109, 0.3); }
+  50% { box-shadow: 0 0 28px rgba(255, 42, 109, 0.85); }
+  100% { box-shadow: 0 0 12px rgba(255, 42, 109, 0.3); }
 }
 .translate-brand {
   font-size: 11px;
   font-weight: 700;
-  background: linear-gradient(90deg, #ff758c, #ff7eb3);
+  background: linear-gradient(90deg, #ff2a6d, #05d9e8);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: 0.5px;
@@ -432,22 +436,22 @@ body { top: 0 !important; }
 .app-container {
   width: 100%;
   max-width: 480px;
-  background: rgba(18, 22, 48, 0.85);
-  backdrop-filter: blur(25px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(14, 18, 42, 0.78);
+  backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 24px;
-  box-shadow: 0 25px 50px rgba(0,0,0,0.6);
+  box-shadow: 0 30px 60px rgba(0,0,0,0.7);
   z-index: 10;
   padding: 24px;
   margin: 15px;
 }
-h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; background: linear-gradient(90deg, #ff758c, #ff7eb3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; background: linear-gradient(90deg, #ff2a6d, #05d9e8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .subtitle { font-size: 11px; text-align: center; color: #a5b4fc; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px; }
 
 /* FOUNDER DEBUT INFO BOX */
 .founder-intro-box {
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 117, 140, 0.25);
+  border: 1px solid rgba(255, 42, 109, 0.3);
   border-radius: 14px;
   padding: 12px;
   margin-bottom: 15px;
@@ -457,7 +461,7 @@ h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; 
 }
 .founder-intro-box h3 {
   font-size: 12px;
-  color: #ff758c;
+  color: #ff2a6d;
   margin-bottom: 4px;
   font-weight: 700;
 }
@@ -468,7 +472,7 @@ h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 4px; 
   margin-top: 6px;
   text-align: right;
   font-style: italic;
-  color: #38bdf8;
+  color: #05d9e8;
   font-weight: 600;
 }
 
@@ -476,19 +480,19 @@ input {
   width: 100%;
   padding: 12px 16px;
   margin-bottom: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
   color: #fff;
   font-size: 14px;
   outline: none;
   transition: all 0.3s;
 }
-input:focus { border-color: #ff758c; box-shadow: 0 0 10px rgba(255,117,140,0.3); }
+input:focus { border-color: #ff2a6d; box-shadow: 0 0 12px rgba(255,42,109,0.4); }
 button {
   width: 100%;
   padding: 12px;
-  background: linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%);
+  background: linear-gradient(135deg, #ff2a6d 0%, #7928ca 100%);
   border: none;
   border-radius: 12px;
   color: white;
@@ -499,18 +503,19 @@ button {
 }
 button:active { transform: scale(0.98); }
 .hidden { display: none !important; }
-.box-section { margin-top: 15px; background: rgba(0,0,0,0.25); padding: 15px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05); }
+.box-section { margin-top: 15px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); }
 .badge-free { background: rgba(34,197,94,0.2); color: #4ade80; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; display: inline-block; margin-bottom: 10px; }
-.wallet-box { font-family: monospace; font-size: 11px; background: rgba(0,0,0,0.4); padding: 8px; border-radius: 8px; margin: 6px 0; word-break: break-all; color: #38bdf8; }
+.wallet-box { font-family: monospace; font-size: 11px; background: rgba(0,0,0,0.45); padding: 8px; border-radius: 8px; margin: 6px 0; word-break: break-all; color: #05d9e8; }
 </style>
 </head>
 <body>
 
-<!-- BACKGROUND GLOW ORBS -->
+<!-- BACKGROUND AMBIENT GLOW ORBS -->
 <div class="bg-glow-orb orb1"></div>
 <div class="bg-glow-orb orb2"></div>
+<div class="bg-glow-orb orb3"></div>
 
-<!-- SEXCITES 24/7 CUSTOM TRANSLATE WIDGET -->
+<!-- SEXCITES 24/7 CUSTOM TRANSLATE WIDGET (Default English) -->
 <div class="translate-float">
   <span class="translate-brand">SEXCITES Translate</span>
   <div id="google_translate_element"></div>
@@ -531,7 +536,7 @@ button:active { transform: scale(0.98); }
 
 <div class="app-container" id="mainApp">
   <h1>SEXCITES.COM</h1>
-  <div class="subtitle">Private Community 18+ • Real-Time V17</div>
+  <div class="subtitle">Private Community 18+ • Real-Time V17.1</div>
 
   <!-- AUTH VIEW -->
   <div id="authView">
@@ -549,7 +554,7 @@ button:active { transform: scale(0.98); }
     </div>
 
     <div style="display:flex; gap:10px; margin-bottom:15px;">
-      <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.1)">Register</button>
+      <button onclick="switchTab('reg')" id="btnRegTab" style="background:rgba(255,255,255,0.12)">Register</button>
       <button onclick="switchTab('log')" id="btnLogTab">Sign In</button>
     </div>
 
@@ -572,7 +577,7 @@ button:active { transform: scale(0.98); }
   <!-- DASHBOARD VIEW -->
   <div id="dashboardView" class="hidden">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-      <span id="welcomeUser" style="font-weight:600; color:#38bdf8;"></span>
+      <span id="welcomeUser" style="font-weight:600; color:#05d9e8;"></span>
       <span class="badge-free" id="badgeStatus">2 Months Free Active</span>
     </div>
 
@@ -585,23 +590,23 @@ button:active { transform: scale(0.98); }
 
     <!-- 1. INBOX -->
     <div id="secInbox" class="box-section">
-      <p style="font-size:12px; margin-bottom:8px; color:#38bdf8;"><b>📥 Message & Request Inbox</b></p>
+      <p style="font-size:12px; margin-bottom:8px; color:#05d9e8;"><b>📥 Message & Request Inbox</b></p>
       <input type="text" id="friendInput" placeholder="Add friend by username (ex: @lenoxjg)" autocomplete="off">
       <button onclick="sendFriendRequest()" style="margin-bottom:12px; font-size:12px;">Send Friend Request</button>
       <div style="font-size:12px; color:#cbd5e1; margin-bottom:6px;"><b>Pending Friend Requests:</b></div>
-      <div id="inboxList" style="background:rgba(0,0,0,0.3); border-radius:8px; padding:8px; max-height:140px; overflow-y:auto; font-size:12px;">
+      <div id="inboxList" style="background:rgba(0,0,0,0.35); border-radius:8px; padding:8px; max-height:140px; overflow-y:auto; font-size:12px;">
         <span id="noReq" style="color:#94a3b8;">No pending requests</span>
       </div>
     </div>
 
     <!-- 2. LIVE CHAT -->
     <div id="secChat" class="box-section hidden">
-      <p style="font-size:12px; margin-bottom:8px; color:#ff758c;"><b>💬 Live Direct Chat & Photos</b></p>
+      <p style="font-size:12px; margin-bottom:8px; color:#ff2a6d;"><b>💬 Live Direct Chat & Photos</b></p>
       <div style="display:flex; gap:6px; margin-bottom:8px;">
         <input type="text" id="msgPeerUsername" placeholder="Friend Username (ex: @user)" autocomplete="off" style="margin:0;">
         <button onclick="loadChatHistory()" style="width:110px; margin:0; font-size:11px;">Load History</button>
       </div>
-      <div id="chatBox" style="height:150px; background:rgba(0,0,0,0.3); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;">
+      <div id="chatBox" style="height:150px; background:rgba(0,0,0,0.35); border-radius:8px; padding:8px; overflow-y:auto; font-size:12px; margin-bottom:8px;">
         <div style="color:#94a3b8; text-align:center; padding-top:40px;">Enter friend username above & load history.</div>
       </div>
       <div style="display:flex; gap:6px;">
@@ -614,7 +619,7 @@ button:active { transform: scale(0.98); }
 
     <!-- 3. WALL SECTION (Interactive Posts, Likes, Comments, Photos & Share) -->
     <div id="secWall" class="box-section hidden">
-      <textarea id="wallText" placeholder="What's on your mind on SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
+      <textarea id="wallText" placeholder="What's on your mind on SEXCITES.COM?" style="width:100%; height:55px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:10px; color:#fff; padding:8px; font-size:12px; margin-bottom:6px; outline:none;" autocomplete="off"></textarea>
       <div style="display:flex; gap:6px; margin-bottom:10px;">
         <input type="file" id="wallImageInput" accept="image/*" style="display:none;" onchange="previewWallImage(event)">
         <button onclick="document.getElementById('wallImageInput').click()" style="width:auto; padding:8px 12px; font-size:11px; background:#334155;">📷 Add Photo</button>
@@ -639,7 +644,7 @@ button:active { transform: scale(0.98); }
       </select>
       
       <button onclick="requestPaymentCode()" style="font-size:12px; margin-bottom:8px;">Get Code & Instructions</button>
-      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.4); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate code and send screenshot to po80payments@gmail.com</div>
+      <div id="codeResultArea" style="font-size:11px; background:rgba(0,0,0,0.45); padding:8px; border-radius:8px; word-break:break-all; margin-bottom:8px;">Click above to generate code and send screenshot to po80payments@gmail.com</div>
       
       <input type="text" id="redeemInput" placeholder="Redeem Code SEXCITES-XXXX" autocomplete="off">
       <button onclick="redeemCode()" style="font-size:12px; background:#10b981;">Redeem VIP Months</button>
@@ -659,25 +664,25 @@ function createHeart() {
   if(!container) return;
   const heart = document.createElement('div');
   heart.className = 'heart';
-  const symbols = ['💖', '💗', '💕', '✨'];
+  const symbols = ['💖', '💗', '✨', '🔥', '💎'];
   heart.innerHTML = symbols[Math.floor(Math.random() * symbols.length)];
   heart.style.left = Math.random() * 100 + 'vw';
-  heart.style.animationDuration = (4 + Math.random() * 3) + 's';
+  heart.style.animationDuration = (5 + Math.random() * 4) + 's';
   container.appendChild(heart);
-  setTimeout(() => { heart.remove(); }, 6000);
+  setTimeout(() => { heart.remove(); }, 8000);
 }
-setInterval(createHeart, 600);
+setInterval(createHeart, 500);
 
 function switchTab(tab) {
   if(tab === 'reg') {
     document.getElementById('regForm').classList.remove('hidden');
     document.getElementById('logForm').classList.add('hidden');
-    document.getElementById('btnRegTab').style.background = 'rgba(255,255,255,0.1)';
+    document.getElementById('btnRegTab').style.background = 'rgba(255,255,255,0.12)';
     document.getElementById('btnLogTab').style.background = 'transparent';
   } else {
     document.getElementById('regForm').classList.add('hidden');
     document.getElementById('logForm').classList.remove('hidden');
-    document.getElementById('btnLogTab').style.background = 'rgba(255,255,255,0.1)';
+    document.getElementById('btnLogTab').style.background = 'rgba(255,255,255,0.12)';
     document.getElementById('btnRegTab').style.background = 'transparent';
   }
 }
@@ -807,7 +812,7 @@ function renderMessageItem(m, peerName) {
   const chatBox = document.getElementById('chatBox');
   const isMe = m.senderId === currentUser.id;
   const senderLabel = isMe ? 'You' : '@' + peerName;
-  const color = isMe ? '#38bdf8' : '#ff758c';
+  const color = isMe ? '#05d9e8' : '#ff2a6d';
   
   let content = m.text;
   if(m.type === 'image') {
@@ -877,7 +882,7 @@ socket.on('new-comment', (data) => {
   const container = document.getElementById('comments_for_' + data.postId);
   if(container) {
     let imgHTML = data.comment.image ? '<br><img src="' + data.comment.image + '" style="max-width:120px; border-radius:6px; margin-top:3px;">' : '';
-    container.innerHTML += '<div style="margin-top:4px; padding:6px; background:rgba(0,0,0,0.2); border-radius:6px;"><b style="color:#38bdf8;">@' + data.comment.author + ':</b> ' + data.comment.text + imgHTML + '</div>';
+    container.innerHTML += '<div style="margin-top:4px; padding:6px; background:rgba(0,0,0,0.25); border-radius:6px;"><b style="color:#05d9e8;">@' + data.comment.author + ':</b> ' + data.comment.text + imgHTML + '</div>';
   }
 });
 
@@ -895,27 +900,27 @@ function renderSinglePost(p) {
   const feed = document.getElementById('wallFeed');
   const div = document.createElement('div');
   div.id = 'post_' + p.id;
-  div.style.cssText = "background:rgba(255,255,255,0.03); padding:10px; border-radius:10px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.05);";
+  div.style.cssText = "background:rgba(255,255,255,0.04); padding:10px; border-radius:10px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.08);";
   
   let imgHTML = p.image ? '<br><img src="' + p.image + '" style="max-width:100%; border-radius:8px; margin-top:6px;">' : '';
   let likesCount = p.likesCount !== undefined ? p.likesCount : (p.likes ? p.likes.length : 0);
   let hasLiked = p.userHasLiked !== undefined ? p.userHasLiked : (p.likes && p.likes.includes(currentUser.id));
-  let likeColor = hasLiked ? '#ff758c' : '#cbd5e1';
+  let likeColor = hasLiked ? '#ff2a6d' : '#cbd5e1';
 
-  let commentsHTML = '<div id="comments_for_' + p.id + '" style="margin-top:8px; padding-left:10px; border-left:2px solid rgba(255,117,140,0.3);">';
+  let commentsHTML = '<div id="comments_for_' + p.id + '" style="margin-top:8px; padding-left:10px; border-left:2px solid rgba(255,42,109,0.4);">';
   if(p.comments) {
     p.comments.forEach(c => {
       let cImg = c.image ? '<br><img src="' + c.image + '" style="max-width:120px; border-radius:6px; margin-top:3px;">' : '';
-      commentsHTML += '<div style="margin-top:4px; padding:6px; background:rgba(0,0,0,0.2); border-radius:6px;"><b style="color:#38bdf8;">@' + c.author + ':</b> ' + c.text + cImg + '</div>';
+      commentsHTML += '<div style="margin-top:4px; padding:6px; background:rgba(0,0,0,0.25); border-radius:6px;"><b style="color:#05d9e8;">@' + c.author + ':</b> ' + c.text + cImg + '</div>';
     });
   }
   commentsHTML += '</div>';
 
-  div.innerHTML = '<b style="color:#ff758c;">@' + p.author + '</b>' +
+  div.innerHTML = '<b style="color:#ff2a6d;">@' + p.author + '</b>' +
                   '<p style="margin-top:2px; color:#e2e8f0;">' + p.text + '</p>' + imgHTML +
                   '<div style="display:flex; gap:15px; margin-top:8px; font-size:11px;">' +
                     '<button onclick="toggleLike(\\\'' + p.id + '\\\')" id="like_btn_' + p.id + '" style="width:auto; background:none; border:none; color:' + likeColor + '; cursor:pointer; padding:0; font-weight:600;">❤️ <span id="likes_count_' + p.id + '">' + likesCount + '</span> Likes</button>' +
-                    '<button onclick="sharePost(\\\'' + p.id + '\\\')" style="width:auto; background:none; border:none; color:#38bdf8; cursor:pointer; padding:0; font-weight:600;">🔗 Share</button>' +
+                    '<button onclick="sharePost(\\\'' + p.id + '\\\')" style="width:auto; background:none; border:none; color:#05d9e8; cursor:pointer; padding:0; font-weight:600;">🔗 Share</button>' +
                   '</div>' +
                   commentsHTML +
                   '<div style="display:flex; gap:4px; margin-top:8px;">' +
@@ -938,7 +943,7 @@ async function toggleLike(postId) {
   if(data.success) {
     const btn = document.getElementById('like_btn_' + postId);
     if(data.liked) {
-      btn.style.color = '#ff758c';
+      btn.style.color = '#ff2a6d';
     } else {
       btn.style.color = '#cbd5e1';
     }
@@ -997,7 +1002,7 @@ async function requestPaymentCode() {
   });
   const data = await res.json();
   if(data.success) {
-    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Code: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Send screenshot to <a href="mailto:' + data.adminEmail + '" style="color:#38bdf8;">' + data.adminEmail + '</a>.</span>';
+    document.getElementById('codeResultArea').innerHTML = '<b style="color:#4ade80;">Code: ' + data.hiddenCode + '</b><br><span style="color:#cbd5e1;">Send screenshot to <a href="mailto:' + data.adminEmail + '" style="color:#05d9e8;">' + data.adminEmail + '</a>.</span>';
   } else {
     alert(data.error);
   }
@@ -1014,8 +1019,8 @@ async function redeemCode() {
   if(data.success) {
     alert(data.message);
     document.getElementById('badgeStatus').innerText = 'VIP Active';
-    document.getElementById('badgeStatus').style.background = 'rgba(56,189,248,0.2)';
-    document.getElementById('badgeStatus').style.color = '#38bdf8';
+    document.getElementById('badgeStatus').style.background = 'rgba(5,217,232,0.2)';
+    document.getElementById('badgeStatus').style.color = '#05d9e8';
   } else {
     alert(data.error);
   }
@@ -1027,5 +1032,5 @@ async function redeemCode() {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('SEXCITES.COM V17 running on port ' + PORT);
+  console.log('SEXCITES.COM V17.1 running on port ' + PORT);
 });
